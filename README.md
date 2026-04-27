@@ -1,6 +1,6 @@
 # Text to CAE 使用教程
 
-这是一个本地运行的 Text-to-CAE 工作区，用浏览器界面展示 Abaqus/CAE 案例、参数、模型树、结果云图和动态过程。项目包含前端 viewer、多个 Abaqus 示例脚本，以及已导出的部分结果数据。
+这是一个本地运行的 Text-to-CAE 工作区，用Codex浏览器界面展示 Abaqus/CAE 案例、参数、模型树、结果云图和动态过程。项目包含前端 viewer、多个 Abaqus 示例脚本，以及已导出的部分结果数据。
 
 GitHub 仓库：
 
