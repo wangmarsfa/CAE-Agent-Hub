@@ -297,7 +297,151 @@ text-to-cae/
 - `export_*.py`：ODB 结果导出脚本。
 - `result_mesh.json`：浏览器读取的结果网格和云图数据。
 
-## 11. GitHub 上传说明
+## 11. 配合 Abaqus MCP 使用
+
+本项目可以和 Abaqus MCP 插件配合使用，把 Codex、Cursor、Claude Desktop 等支持 MCP 的客户端和 Abaqus/CAE 联通起来。
+
+Abaqus MCP 仓库：
+
+```text
+https://github.com/Cai-aa/abaqus-mcp
+```
+
+典型工作流是：
+
+```text
+Codex / Cursor / Claude Desktop
+  -> MCP client
+  -> abaqus-mcp server
+  -> Abaqus/CAE 插件
+  -> 执行建模脚本、提交作业、读取 ODB、截图或导出 result_mesh.json
+  -> text-to-cae viewer 展示结果
+```
+
+### 11.1 安装 Abaqus MCP
+
+在 PowerShell 中克隆插件仓库：
+
+```powershell
+git clone https://github.com/Cai-aa/abaqus-mcp.git $env:USERPROFILE\.abaqus-mcp
+```
+
+安装 MCP server 依赖：
+
+```powershell
+pip install mcp
+```
+
+如果使用 Codex 自带 Python 或其他虚拟环境，也可以在对应 Python 环境中安装 `mcp`。
+
+### 11.2 让 Abaqus 加载插件
+
+可选方式一：复制 Abaqus 启动环境文件，让 Abaqus 启动时自动加载插件。
+
+```powershell
+Copy-Item -Force "$env:USERPROFILE\.abaqus-mcp\abaqus_v6.env.example" "$env:USERPROFILE\abaqus_v6.env"
+```
+
+可选方式二：安装 Abaqus GUI 菜单。
+
+```powershell
+Copy-Item -Recurse -Force "$env:USERPROFILE\.abaqus-mcp\abaqus_plugins\mcp_control" "$env:USERPROFILE\abaqus_plugins\mcp_control"
+```
+
+安装后重启 Abaqus/CAE，可以在菜单中看到：
+
+```text
+Plug-ins -> MCP
+```
+
+### 11.3 配置 MCP client
+
+对 Cursor、Claude Desktop 或其他支持 MCP 的客户端，可以把 MCP server 配成类似下面的形式：
+
+```json
+{
+  "mcpServers": {
+    "abaqus-mcp-server": {
+      "command": "python",
+      "args": ["C:/Users/Cai/.abaqus-mcp/mcp_server.py"]
+    }
+  }
+}
+```
+
+如果你的用户名、Python 路径或仓库路径不同，把 `args` 中的路径改成自己的实际路径。
+
+### 11.4 在 Abaqus 中启动 MCP
+
+打开 Abaqus/CAE 后，可以通过菜单启动：
+
+```text
+Plug-ins -> MCP -> Start MCP
+```
+
+也可以在 Abaqus Python 控制台中启动：
+
+```python
+mcp_start()
+```
+
+如果某些 Abaqus 版本对后台线程支持不稳定，可以使用 cooperative 或 blocking 模式：
+
+```python
+mcp_coop_loop()
+```
+
+或：
+
+```python
+mcp_loop()
+```
+
+### 11.5 和本项目联动
+
+MCP 连通后，可以让 Codex、Cursor 或 Claude 执行这些任务：
+
+- 在 Abaqus/CAE 中运行 `models/text-to-cae-sphere-impact/sphere_impact_abaqus.py`。
+- 提交当前 Abaqus 作业。
+- 查询模型中的 part、material、step、load、BC、interaction。
+- 打开 ODB 并读取 step、frame、instance 信息。
+- 截取 Abaqus viewport 图片。
+- 执行导出脚本生成 `result_mesh.json`。
+- 回到本项目 viewer 中刷新页面查看结果。
+
+示例提示词：
+
+```text
+用 Abaqus MCP 连接当前 Abaqus/CAE，运行 text-to-cae 的球冲击板材案例，提交作业，导出 result_mesh.json，然后告诉我峰值应力和最大位移。
+```
+
+```text
+打开当前 ODB，读取所有 step 和 frame 信息，并截取 Abaqus viewport 当前视角。
+```
+
+```text
+修改三维铣削案例的工件尺寸和刀具直径，重新运行 Abaqus 脚本并导出 viewer 可读取的结果。
+```
+
+### 11.6 什么时候用 MCP，什么时候用 viewer
+
+viewer 适合：
+
+- 快速浏览已有结果。
+- 调参后通过浏览器触发重新求解。
+- 查看模型树、云图、动态帧和结果指标。
+
+Abaqus MCP 适合：
+
+- 让 AI 客户端直接操作 Abaqus/CAE。
+- 自动运行复杂脚本。
+- 查询当前 Abaqus 会话中的模型状态。
+- 批量提交作业、读取 ODB、截图和诊断求解结果。
+- 在 Codex、Cursor、Claude Desktop 等工具中形成“自然语言 -> Abaqus 操作 -> 结果回读”的闭环。
+
+二者可以一起使用：MCP 负责控制 Abaqus 和生成数据，text-to-cae viewer 负责交互式展示结果。
+
+## 12. GitHub 上传说明
 
 仓库已经上传为私有仓库：
 
@@ -328,7 +472,7 @@ git commit -m "Update CAE viewer"
 git push
 ```
 
-## 12. 常见问题
+## 13. 常见问题
 
 ### 页面打不开
 
