@@ -18,7 +18,7 @@ https://github.com/Cai-aa/text-to-cae
 https://github.com/Cai-aa/abaqus-mcp
 ```
 
-## 1. 推荐工作流：Codex + Abaqus MCP + 浏览器结果查看
+## 1. 推荐工作流：Codex + Abaqus MCP + Codex浏览器结果查看
 
 推荐的完整使用方式如下：
 
