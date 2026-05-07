@@ -2,6 +2,8 @@
 
 **语言：** [English](README.md) | 中文
 
+![Text to CAE 效果展示](assets/text-to-cae-preview.png)
+
 Text to CAE 是一个本地运行的 Abaqus 仿真工作区，带有浏览器结果查看器。它适合用 Codex、Cursor、Claude Desktop 等 AI 客户端编写和修改 Abaqus Python 脚本，然后通过 Abaqus/CAE 求解，并把结果导出到浏览器中交互查看。
 
 项目连接三层能力：

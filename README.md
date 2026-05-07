@@ -2,6 +2,8 @@
 
 **Language:** English | [中文](README.zh-CN.md)
 
+![Text to CAE preview](assets/text-to-cae-preview.png)
+
 Text to CAE is a local Abaqus simulation workspace with a browser-based result viewer. It is designed for workflows where an AI coding client, such as Codex, Cursor, or Claude Desktop, writes and edits Abaqus Python scripts, runs Abaqus/CAE, exports solver results, and displays those results in an interactive web UI.
 
 The project connects three layers:
