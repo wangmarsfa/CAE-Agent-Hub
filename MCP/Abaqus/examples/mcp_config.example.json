@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "abaqus-mcp-server": {
+      "command": "C:\\path\\to\\text-to-cae\\MCP\\Abaqus\\.venv\\Scripts\\python.exe",
+      "args": ["C:\\path\\to\\text-to-cae\\MCP\\Abaqus\\mcp_server.py"],
+      "cwd": "C:\\path\\to\\text-to-cae\\MCP\\Abaqus",
+      "env": {
+        "ABAQUS_MCP_HOME": "C:\\path\\to\\text-to-cae\\MCP\\Abaqus"
+      }
+    }
+  }
+}

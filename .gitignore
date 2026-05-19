@@ -37,3 +37,11 @@ MCP/**/*.rst
 MCP/**/*.db
 MCP/**/*.err
 MCP/**/*.out
+MCP/**/commands/
+MCP/**/results/
+MCP/**/scripts/
+MCP/**/screenshots/
+MCP/**/status.json
+MCP/**/status.json.tmp
+MCP/**/stop.flag
+MCP/**/mcp.log
