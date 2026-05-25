@@ -1,69 +1,43 @@
 # -*- coding: utf-8 -*-
 """
-MCP Control Plugin v4.0 - Adds GUI menu buttons to control MCP from kernel side.
+Abaqus MCP GUI menu loader.
+
+Copy this directory to the Abaqus user plugin folder. The loader executes the
+main socket bridge plugin from ABAQUS_MCP_HOME so there is only one maintained
+implementation.
 """
 
-from abaqusGui import *
-from abaqusConstants import ALL
+from __future__ import print_function
 
-toolset = getAFXApp().getAFXMainWindow().getPluginToolset()
+import os
+import sys
+import traceback
 
-toolset.registerKernelMenuButton(
-    buttonText='MCP|Start MCP (Background, Experimental)',
-    moduleName='__main__',
-    functionName='mcp_start()',
-    icon=None,
-    applicableModules=ALL,
-    version='4.0',
-    author='MCP Plugin',
-    description='Start MCP in background thread (experimental on some Abaqus builds)',
-    helpUrl=''
-)
 
-toolset.registerKernelMenuButton(
-    buttonText='MCP|Start MCP (Cooperative)',
-    moduleName='__main__',
-    functionName='mcp_coop_loop()',
-    icon=None,
-    applicableModules=ALL,
-    version='4.0',
-    author='MCP Plugin',
-    description='Start MCP in cooperative loop mode',
-    helpUrl=''
-)
+def _resolve_mcp_home():
+    env_home = os.environ.get("ABAQUS_MCP_HOME", "").strip()
+    if env_home:
+        return env_home
+    return os.path.join(os.path.expanduser("~"), ".abaqus-mcp")
 
-toolset.registerKernelMenuButton(
-    buttonText='MCP|Start MCP (Blocking)',
-    moduleName='__main__',
-    functionName='mcp_loop()',
-    icon=None,
-    applicableModules=ALL,
-    version='4.0',
-    author='MCP Plugin',
-    description='Start MCP in blocking mode',
-    helpUrl=''
-)
 
-toolset.registerKernelMenuButton(
-    buttonText='MCP|Stop MCP',
-    moduleName='__main__',
-    functionName='mcp_stop()',
-    icon=None,
-    applicableModules=ALL,
-    version='4.0',
-    author='MCP Plugin',
-    description='Stop MCP polling',
-    helpUrl=''
-)
+def _load_main_plugin():
+    plugin_path = os.path.join(_resolve_mcp_home(), "abaqus_mcp_plugin.py")
+    if not os.path.exists(plugin_path):
+        print("Abaqus MCP loader could not find: " + plugin_path)
+        print("Set ABAQUS_MCP_HOME to the folder containing abaqus_mcp_plugin.py.")
+        return
 
-toolset.registerKernelMenuButton(
-    buttonText='MCP|MCP Status',
-    moduleName='__main__',
-    functionName='mcp_status()',
-    icon=None,
-    applicableModules=ALL,
-    version='4.0',
-    author='MCP Plugin',
-    description='Print current MCP status to console',
-    helpUrl=''
-)
+    try:
+        import __main__
+        if getattr(__main__, "_ABAQUS_MCP_MENU_REGISTERED", False):
+            return
+        with open(plugin_path, "r") as handle:
+            code = handle.read()
+        exec(compile(code, plugin_path, "exec"), __main__.__dict__)
+    except Exception:
+        print("Abaqus MCP loader failed:")
+        traceback.print_exc()
+
+
+_load_main_plugin()
