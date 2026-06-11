@@ -2,102 +2,148 @@
 
 **Language:** English | [中文](README.zh-CN.md)
 
-![CAE Agent Hub preview](assets/text-to-cae-preview.png)
+CAE Agent Hub is a collection of MCP servers, reusable agent skills, solver automation scripts, and browser result viewers for mainstream engineering simulation software. The goal is to let AI coding clients such as Codex, Cursor, Claude Code, or Claude Desktop work with real CAE tools instead of only generating offline examples.
 
-CAE Agent Hub is a workspace for MCP servers, agent skills, automation scripts, and browser viewers for mainstream engineering simulation software. It is designed for workflows where an AI coding client, such as Codex, Cursor, or Claude Desktop, connects to real CAE tools, writes or edits solver scripts, runs verified local simulations, exports results, and displays those results in an interactive web UI.
+The current repository includes:
 
-The project is expanding across solver ecosystems, including Abaqus and Ansys products such as Fluent, Workbench Mechanical, and AEDT/HFSS. The original Text to CAE viewer remains as the browser-based result viewer and demo workflow inside this broader hub.
+- MCP servers for Abaqus/CAE, ANSYS Fluent, ANSYS Workbench Mechanical, and Ansys Electronics Desktop / HFSS.
+- Abaqus-focused finite element skills organized by workflow stage.
+- The original Text to CAE browser viewer for inspecting exported `result_mesh.json` simulation results.
+- Example workflows and templates that keep solver binaries, licenses, private paths, and generated results out of source control.
 
-The project connects four layers:
-
-- **CAE applications** build models, mesh, solve, and produce native result databases.
-- **MCP servers** let AI clients inspect and control live solver sessions.
-- **Agent skills** package repeatable setup, modeling, solving, and postprocessing workflows.
-- **Text to CAE Viewer** loads exported `result_mesh.json`, project metadata, parameters, time frames, contours, and model trees in the browser.
-
-Repository:
+## Repository
 
 ```text
-https://github.com/Cai-aa/text-to-cae
+https://github.com/Cai-aa/CAE-Agent-Hub
 ```
 
-Related Abaqus MCP repository:
+The old `text-to-cae` name is kept in some folder names for compatibility with existing viewer cases.
+
+## Architecture
 
 ```text
-https://github.com/Cai-aa/abaqus-mcp
+AI client
+  -> MCP server or skill instruction
+  -> live CAE application or solver script
+  -> native solver results
+  -> exported lightweight viewer data
+  -> browser inspection or report workflow
 ```
 
-## Recommended Workflow
+This repository separates responsibilities:
 
-```text
-Codex or another MCP-capable AI client
-  -> connects to a live CAE application through an MCP server
-  -> creates or edits solver automation scripts
-  -> asks the solver to build, mesh, solve, and read result data
-  -> exports result_mesh.json
-  -> opens the Text to CAE browser viewer
-```
+- **MCP servers** provide live tool access to installed CAE applications.
+- **Skills** provide reusable modeling, setup, solving, postprocessing, and validation instructions.
+- **CAE applications** perform the real solve.
+- **Viewer modules** inspect exported result data without requiring the solver to be open.
 
-This keeps the responsibilities clear:
+## MCP Index
 
-- The AI client handles natural-language changes, code editing, debugging, and automation.
-- The CAE application handles the real solver work.
-- The browser viewer handles fast interactive inspection of CAE results.
+| MCP | Status | Purpose | Main entry points | Trigger keywords |
+| --- | --- | --- | --- | --- |
+| [Abaqus MCP](MCP/Abaqus) | Active | Connect MCP clients to a live Abaqus/CAE session through a local TCP bridge; run Python in the Abaqus kernel, inspect models, submit jobs, monitor status, inspect ODB files, and capture viewport images. | `mcp_server.py`, `abaqus_mcp_plugin.py`, `abaqus_plugins/mcp_control/` | Abaqus MCP, Abaqus/CAE, ODB, viewport, submit job, live Abaqus |
+| [ANSYS Fluent MCP](MCP/Ansys/Fluent%20MCP) | Active | Detect Fluent, launch batch journals, track jobs/logs, and optionally manage live PyFluent sessions for Scheme, TUI, and Python probes. | `server.py`, `tools/fluent_bridge.py`, `tools/pyfluent_session.py` | Fluent, PyFluent, journal, TUI, CFD, Scheme |
+| [ANSYS Workbench MCP](MCP/Ansys/Workbench%20MCP) | Active | Control Workbench and Mechanical through Python helpers plus an ACT bridge, with file-queue and socket-timer communication modes. | `server.py`, `tools/`, `workbench_plugin/` | Workbench, Mechanical, ACT, LS-DYNA, socket timer |
+| [Ansys AEDT MCP](MCP/Ansys/AEDT%20MCP) | Active | Connect MCP clients to Ansys Electronics Desktop / HFSS through a raw TCP JSON bridge; inspect projects, create HFSS designs, save projects, and run small AEDT Python snippets. | `mcp_server.py`, `aedt_mcp_bridge.py`, `scripts/install_aedt_toolkit_button.ps1` | AEDT, HFSS, Electronics Desktop, antenna, S-parameters |
 
-## Requirements
+> Adding a new MCP? Follow this pattern: keep reusable source, examples, tests, and bilingual README files; exclude virtual environments, solver results, private paths, licenses, and generated project data.
 
-- Windows
-- Node.js and npm
-- A supported CAE application for solver-backed runs, such as Abaqus/CAE or Ansys tools
-- Python available to the relevant solver scripts
-- Optional: an MCP-capable AI client plus one of the included MCP servers or [Abaqus MCP](https://github.com/Cai-aa/abaqus-mcp)
+## Skill Index
 
-The viewer can display any case that already has a `result_mesh.json`. A solver installation is only required when you want to regenerate solver output or run a case from the browser.
+| Skill | Status | Purpose | Trigger keywords |
+| --- | --- | --- | --- |
+| [abaqus](Skill/abaqus/core/abaqus) | Active | Master router for Abaqus FEA scripting and analysis workflows. | Abaqus, FEA, finite element, simulation, route skills |
+| [abaqus-geometry](Skill/abaqus/modeling/abaqus-geometry) | Active | Create parts, sketches, extrusions, assemblies, and import CAD. | geometry, part, sketch, extrude, STEP, IGES |
+| [abaqus-material](Skill/abaqus/modeling/abaqus-material) | Active | Define materials, sections, density, elasticity, plasticity, and common engineering properties. | material, steel, aluminum, Young's modulus, plastic |
+| [abaqus-mesh](Skill/abaqus/modeling/abaqus-mesh) | Active | Generate finite element meshes and choose element types. | mesh, elements, nodes, C3D8R, refine |
+| [abaqus-interaction](Skill/abaqus/modeling/abaqus-interaction) | Active | Define contact, friction, tie constraints, connectors, and bonded surfaces. | contact, friction, tie, touching parts, bonded |
+| [abaqus-amplitude](Skill/abaqus/setup/abaqus-amplitude) | Active | Define time-varying amplitudes for ramp, pulse, cyclic, or transient loads. | amplitude, ramp, pulse, cyclic, time-varying |
+| [abaqus-bc](Skill/abaqus/setup/abaqus-bc) | Active | Define boundary conditions such as fixed, pinned, clamped, displacement, and symmetry constraints. | fixed, clamped, pinned, support, constraint |
+| [abaqus-docs](Skill/abaqus/setup/abaqus-docs) | Active | Download and manage abqpy / Abaqus API documentation. | Abaqus docs, API reference, abqpy |
+| [abaqus-field](Skill/abaqus/setup/abaqus-field) | Active | Define initial conditions and predefined fields such as initial temperature or residual stress. | initial condition, predefined field, residual stress |
+| [abaqus-load](Skill/abaqus/setup/abaqus-load) | Active | Apply concentrated forces, pressures, gravity, and distributed loads. | force, pressure, gravity, load |
+| [abaqus-output](Skill/abaqus/setup/abaqus-output) | Active | Configure field and history output requests. | output request, field output, history output |
+| [abaqus-step](Skill/abaqus/setup/abaqus-step) | Active | Define analysis steps, procedures, increments, time periods, and nonlinear geometry settings. | step, static step, dynamic step, frequency, nlgeom |
+| [abaqus-static-analysis](Skill/abaqus/analysis/abaqus-static-analysis) | Active | Complete static structural workflow for stress, displacement, reactions, strength, and stiffness. | static, stress, displacement, strength, reaction force |
+| [abaqus-modal-analysis](Skill/abaqus/analysis/abaqus-modal-analysis) | Active | Extract natural frequencies and mode shapes for vibration and resonance checks. | modal, frequency, vibration, resonance, mode shape |
+| [abaqus-dynamic-analysis](Skill/abaqus/analysis/abaqus-dynamic-analysis) | Active | Complete dynamic workflow for impact, crash, drop test, transient, explicit, or implicit dynamics. | impact, crash, drop test, transient, explicit |
+| [abaqus-thermal-analysis](Skill/abaqus/analysis/abaqus-thermal-analysis) | Active | Heat transfer workflow for steady-state or transient temperature distribution. | thermal, heat transfer, conduction, convection |
+| [abaqus-coupled-analysis](Skill/abaqus/analysis/abaqus-coupled-analysis) | Active | Coupled thermomechanical workflow for thermal stress and temperature-driven deformation. | thermal stress, expansion, temperature deformation |
+| [abaqus-contact-analysis](Skill/abaqus/analysis/abaqus-contact-analysis) | Active | Multi-body contact workflow for friction, press fit, bolts, and assemblies. | contact analysis, friction, press fit, bolt |
+| [abaqus-fatigue-analysis](Skill/abaqus/analysis/abaqus-fatigue-analysis) | Active | Fatigue and durability workflow for cycles, damage accumulation, and life prediction. | fatigue, durability, cycles, life prediction |
+| [abaqus-job](Skill/abaqus/execution/abaqus-job) | Active | Create, submit, monitor, and manage Abaqus jobs and input files. | run analysis, submit job, input file, execute |
+| [abaqus-export](Skill/abaqus/execution/abaqus-export) | Active | Export Abaqus geometry and results to STL, STEP, CSV, INP, or external formats. | export, STL, STEP, CSV, INP |
+| [abaqus-odb](Skill/abaqus/postprocessing/abaqus-odb) | Active | Read ODB results and extract stress, displacement, reaction force, and result summaries. | ODB, maximum stress, displacement, reaction force |
+| [abaqus-optimization](Skill/abaqus/optimization/abaqus-optimization) | Active | Configure Tosca optimization responses, objectives, constraints, and SIMP-style settings. | optimization, objective, constraint, Tosca |
+| [abaqus-shape-optimization](Skill/abaqus/optimization/abaqus-shape-optimization) | Active | Optimize fillet/notch/surface shape to reduce peak stress without topology removal. | shape optimization, fillet, notch, stress concentration |
+| [abaqus-topology-optimization](Skill/abaqus/optimization/abaqus-topology-optimization) | Active | Topology optimization workflow for reducing mass while preserving stiffness. | topology optimization, weight reduction, stiffness |
+| [fea-structural](Skill/abaqus/reference/fea-structural) | Reference | General structural FEA guidance across static, dynamic, nonlinear, and validation domains. | structural FEA, nonlinear, validation |
+| [fenics-fem](Skill/abaqus/reference/fenics-fem) | Reference | FEniCS/dolfinx finite element reference for weak forms, gmsh meshes, PDEs, and ParaView export. | FEniCS, dolfinx, PDE, weak form, gmsh |
 
-## Install and Run the Viewer
+> Adding a new skill? Keep the complete skill directory together with `SKILL.md`, `metadata.json` when available, upstream attribution, references, assets, and any scripts needed by the workflow.
 
-Clone the project:
+## Installation
+
+### Clone
 
 ```powershell
-git clone https://github.com/Cai-aa/text-to-cae.git
-Set-Location .\text-to-cae
+git clone https://github.com/Cai-aa/CAE-Agent-Hub.git
+Set-Location .\CAE-Agent-Hub
 ```
 
-Install viewer dependencies:
+If you cloned the repository before the rename, the old `text-to-cae` remote may still work through GitHub redirects. Updating the remote URL is clearer:
+
+```powershell
+git remote set-url origin https://github.com/Cai-aa/CAE-Agent-Hub.git
+```
+
+### Use an MCP server
+
+Each MCP folder has its own README and environment template. The common local pattern is:
+
+```powershell
+Set-Location ".\MCP\<vendor>\<server folder>"
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -U pip
+.\.venv\Scripts\python.exe -m pip install -e .
+```
+
+Then register the server with your MCP-capable client using the example config in that folder.
+
+### Use skills
+
+Skills are instruction modules, not solver binaries. Copy the complete skill directory into your agent's skill directory or attach the relevant `SKILL.md` as project context.
+
+Codex example:
+
+```powershell
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.codex\skills" | Out-Null
+Copy-Item -Recurse -Force ".\Skill\abaqus\analysis\abaqus-static-analysis" "$env:USERPROFILE\.codex\skills\abaqus-static-analysis"
+```
+
+Suggested prompt:
+
+```text
+Use the abaqus-static-analysis, abaqus-mesh, abaqus-job, and abaqus-odb skills. Build a complete Abaqus static-analysis workflow, run it if the Abaqus MCP or local Abaqus CLI is available, and report the exact files and commands used.
+```
+
+## Text to CAE Viewer
+
+The viewer is still included as the browser result-inspection layer. It can display cases that contain `result_mesh.json` even when the solver is not installed.
 
 ```powershell
 Set-Location .\viewer
 npm.cmd install
-```
-
-Start the local viewer:
-
-```powershell
 npm.cmd run dev
 ```
 
-Open:
+Open the Vite URL, usually:
 
 ```text
 http://127.0.0.1:4178/
 ```
 
-If port `4178` is already in use, choose another port:
-
-```powershell
-$env:VIEWER_PORT = "4181"
-npm.cmd run dev
-```
-
-Then open:
-
-```text
-http://127.0.0.1:4181/
-```
-
-## Open Example Cases
-
-Use the `case` query parameter to open a specific simulation:
+Example cases:
 
 ```text
 http://127.0.0.1:4178/?case=cantilever
@@ -109,280 +155,56 @@ http://127.0.0.1:4178/?case=gear-mesh
 http://127.0.0.1:4178/?case=bullet-plate
 ```
 
-The viewer includes an Abaqus-style result viewport:
+## Repository Layout
 
 ```text
-http://127.0.0.1:4178/?case=sphere-impact&mode=cae
-```
-
-## Browser-to-Abaqus Runs
-
-The Vite dev server includes local CAE API endpoints:
-
-```text
-/__cae/project
-/__cae/result-mesh
-/__cae/result-summary
-/__cae/parameters
-/__cae/run
-```
-
-For runnable examples, the browser can update parameters and trigger Abaqus noGUI execution:
-
-```text
-viewer
-  -> /__cae/run
-  -> Abaqus noGUI
-  -> *_abaqus.py
-  -> export_*.py
-  -> result_mesh.json
-  -> viewer refresh
-```
-
-By default the viewer looks for Abaqus at:
-
-```text
-G:\SIMULIA\Commands\abaqus.bat
-```
-
-If Abaqus is installed elsewhere, set `ABAQUS_COMMAND` before starting the viewer:
-
-```powershell
-$env:ABAQUS_COMMAND = "C:\SIMULIA\Commands\abaqus.bat"
-npm.cmd run dev
-```
-
-## Case File Layout
-
-Each example case normally contains:
-
-```text
-models/<case>/
-  cae_parameters.json
-  cae_project.json
-  *_abaqus.py
-  export_*.py
-  result_mesh.json
-```
-
-File roles:
-
-- `*_abaqus.py` builds the Abaqus model, assigns materials, meshes, defines steps, applies loads and boundary conditions, and submits the job.
-- `export_*.py` reads ODB output and exports browser-readable mesh, contour, displacement, modal, or dynamic-frame data.
-- `result_mesh.json` is the main result payload loaded by the viewer.
-- `cae_project.json` stores project metadata, workflow state, model tree data, output paths, and result metrics.
-- `cae_parameters.json` stores editable input parameters used by the browser run panel.
-
-## Included Examples
-
-| Case | Directory | Description |
-| --- | --- | --- |
-| Cantilever beam | `models/text-to-cae` | Static introductory case with displacement and stress contours. |
-| Plate with hole | `models/text-to-cae-hole-plate` | Tensile plate with circular-hole stress concentration. |
-| Plate with hole modal | `models/text-to-cae-hole-plate-modal` | Frequency extraction case with modal frames. |
-| Sphere impact | `models/text-to-cae-sphere-impact` | Explicit dynamics example showing sphere-to-plate contact, impact, indentation, and rebound. |
-| 3D milling | `models/text-to-cae-milling-3d` | End-milling dynamics visualization with editable machining parameters. |
-| Gear mesh | `models/text-to-cae-gear-mesh` | Spur gear meshing dynamics with driver and driven gear parameters. |
-| Bullet plate | `models/text-to-cae-bullet-plate` | High-speed projectile penetration example. |
-
-Some large result files are intentionally not committed. Regenerate them locally with Abaqus or with the provided refresh scripts.
-
-## Refresh Visual Result Data
-
-Some examples include deterministic refresh scripts that can rebuild browser preview data without waiting for a full solver run:
-
-```powershell
-node models\text-to-cae-sphere-impact\refresh_contact_result.mjs
-node models\text-to-cae-milling-3d\refresh_visual_result.mjs
-node models\text-to-cae-gear-mesh\refresh_gear_result.mjs
-```
-
-## Run Abaqus Scripts Directly
-
-You can also run cases from the command line without using the browser run button.
-
-Sphere impact:
-
-```powershell
-& "G:\SIMULIA\Commands\abaqus.bat" cae noGUI=models\text-to-cae-sphere-impact\sphere_impact_abaqus.py
-& "G:\SIMULIA\Commands\abaqus.bat" cae noGUI=models\text-to-cae-sphere-impact\export_dynamic_mesh.py
-```
-
-3D milling:
-
-```powershell
-& "G:\SIMULIA\Commands\abaqus.bat" cae noGUI=models\text-to-cae-milling-3d\milling_abaqus.py
-& "G:\SIMULIA\Commands\abaqus.bat" cae noGUI=models\text-to-cae-milling-3d\export_milling_mesh.py
-```
-
-Gear mesh:
-
-```powershell
-& "G:\SIMULIA\Commands\abaqus.bat" cae noGUI=models\text-to-cae-gear-mesh\gear_mesh_abaqus.py
-& "G:\SIMULIA\Commands\abaqus.bat" cae noGUI=models\text-to-cae-gear-mesh\export_gear_mesh.py
-```
-
-## Connect Codex to Abaqus with MCP
-
-Install Abaqus MCP:
-
-```powershell
-git clone https://github.com/Cai-aa/abaqus-mcp.git $env:USERPROFILE\.abaqus-mcp
-pip install mcp
-```
-
-Let Abaqus/CAE load the MCP startup environment:
-
-```powershell
-Copy-Item -Force "$env:USERPROFILE\.abaqus-mcp\abaqus_v6.env.example" "$env:USERPROFILE\abaqus_v6.env"
-```
-
-Optional GUI menu plugin:
-
-```powershell
-Copy-Item -Recurse -Force "$env:USERPROFILE\.abaqus-mcp\abaqus_plugins\mcp_control" "$env:USERPROFILE\abaqus_plugins\mcp_control"
-```
-
-After restarting Abaqus/CAE, start MCP from:
-
-```text
-Plug-ins -> MCP -> Start MCP
-```
-
-You can also start it from the Abaqus Python console:
-
-```python
-mcp_start()
-```
-
-If background threads are unstable in your Abaqus version, use the cooperative or blocking loop:
-
-```python
-mcp_coop_loop()
-```
-
-or:
-
-```python
-mcp_loop()
-```
-
-Configure your MCP-capable client with the Abaqus MCP server. A typical shape is:
-
-```json
-{
-  "mcpServers": {
-    "abaqus-mcp": {
-      "command": "python",
-      "args": ["C:/Users/<your-user>/.abaqus-mcp/mcp_server.py"]
-    }
-  }
-}
-```
-
-Replace `<your-user>` with your Windows user name, or use an absolute Python interpreter path if `python` is not on `PATH`.
-
-## Viewer Controls
-
-The UI is organized around:
-
-- A left model tree for project, parts, materials, assembly, steps, loads, boundary conditions, mesh, jobs, and results.
-- A central 3D viewport for contours, mesh edges, dynamic frames, modal shapes, tools, spheres, gears, projectiles, and other case objects.
-- A right panel for state, metrics, editable parameters, and run controls.
-
-Common interactions:
-
-- Left drag: rotate the model.
-- Middle drag: pan the model.
-- Mouse wheel: zoom.
-- Play controls: animate dynamic or modal frames.
-- Theme controls: switch between Abaqus, dark, and light viewport styles.
-
-## Project Structure
-
-```text
-text-to-cae/
-  README.md
-  LICENSE
+CAE-Agent-Hub/
+  MCP/
+    Abaqus/
+    Ansys/
+      AEDT MCP/
+      Fluent MCP/
+      Workbench MCP/
+  Skill/
+    abaqus/
+      core/
+      modeling/
+      setup/
+      analysis/
+      execution/
+      postprocessing/
+      optimization/
+      reference/
   models/
-    text-to-cae/
-    text-to-cae-hole-plate/
-    text-to-cae-hole-plate-modal/
-    text-to-cae-sphere-impact/
-    text-to-cae-milling-3d/
-    text-to-cae-gear-mesh/
-    text-to-cae-bullet-plate/
   viewer/
-    package.json
-    vite.config.mjs
-    main.jsx
-    components/
-      CaeResultViewer.js
-      TextToCaeWorkspace.js
 ```
 
-## Git and Large Files
+## Source Control Policy
 
-The repository excludes generated or large local artifacts, including:
+The repository should include reusable source, documentation, tests, examples, templates, and skill instructions.
 
-- `viewer/node_modules/`
-- `viewer/dist/`
-- `viewer/dist-verify/`
-- Abaqus `.odb`
-- Abaqus `.inp`
-- Abaqus intermediate files such as `.sim`, `.dat`, `.msg`, `.sta`, `.prt`, and `.lck`
-- Python `__pycache__`
-- very large generated `result_mesh.json` files
+It should not include:
 
-These files can be recreated by installing dependencies, rebuilding the viewer, rerunning Abaqus scripts, or using the refresh scripts.
+- CAE software binaries or licenses.
+- Private machine paths or credentials.
+- Virtual environments and package caches.
+- Generated solver outputs such as ODB, case/data, AEDT results, Workbench projects, logs, and screenshots.
+- Large local result artifacts that can be regenerated.
 
 ## Build
 
-Build the frontend:
+Build the frontend viewer:
 
 ```powershell
 Set-Location .\viewer
 npm.cmd run build
 ```
 
-The build output is written to `viewer/dist/`.
+## Roadmap
 
-## Troubleshooting
+The hub is designed to grow toward more mainstream simulation ecosystems:
 
-### The page does not open
-
-Make sure the dev server is running:
-
-```powershell
-Set-Location .\viewer
-npm.cmd run dev
-```
-
-Open the URL printed by Vite, normally:
-
-```text
-http://127.0.0.1:4178/
-```
-
-### The viewer does not show updated results
-
-Click the refresh control in the viewer or reload the browser page. `result_mesh.json` is loaded at runtime, so the page may still be showing the previous result payload.
-
-### Abaqus does not start from the browser
-
-Check `ABAQUS_COMMAND`:
-
-```powershell
-$env:ABAQUS_COMMAND
-```
-
-If it is empty or points to the wrong path, set it before starting the viewer:
-
-```powershell
-$env:ABAQUS_COMMAND = "G:\SIMULIA\Commands\abaqus.bat"
-npm.cmd run dev
-```
-
-### Some result files are missing after clone
-
-Large ODB, INP, and generated result files are not committed. Regenerate them with the corresponding Abaqus script or refresh script.
+- More solver-specific MCP servers.
+- More productized skill packs for repeatable modeling and validation workflows.
+- Shared result export formats for viewer and report generation.
+- Safer install prompts and verification scripts for each CAE application.

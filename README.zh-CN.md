@@ -2,102 +2,148 @@
 
 **语言：** [English](README.md) | 中文
 
-![CAE Agent Hub 效果展示](assets/text-to-cae-preview.png)
+CAE Agent Hub 是一个面向主流工程仿真软件的 MCP server、Agent Skill、求解器自动化脚本和浏览器结果查看器集合。目标是让 Codex、Cursor、Claude Code、Claude Desktop 等 AI 客户端连接真实 CAE 软件，而不是只生成离线示例。
 
-CAE Agent Hub 是一个面向主流工程仿真软件的 MCP server、Agent Skill、自动化脚本和浏览器结果查看器工作区。它适合用 Codex、Cursor、Claude Desktop 等 AI 客户端连接真实 CAE 工具，编写或修改求解器脚本，运行经过验证的本地仿真，导出结果，并在浏览器中交互查看。
+当前仓库包含：
 
-这个项目会持续扩展到不同求解器生态，包括 Abaqus，以及 Ansys Fluent、Workbench Mechanical、AEDT/HFSS 等 Ansys 工具。原来的 Text to CAE viewer 仍然作为这个更大 Hub 里的浏览器结果查看器和演示工作流保留。
+- Abaqus/CAE、ANSYS Fluent、ANSYS Workbench Mechanical、Ansys Electronics Desktop / HFSS 的 MCP server。
+- 按工作流阶段组织的 Abaqus 有限元 skill。
+- 原 Text to CAE 浏览器 viewer，用于查看导出的 `result_mesh.json` 仿真结果。
+- 示例工作流和模板；求解器二进制文件、许可证、私有路径和生成结果不进入源码仓库。
 
-项目连接四层能力：
-
-- **CAE 应用程序**：负责真实建模、网格划分、求解和生成原生结果数据库。
-- **MCP servers**：让 AI 客户端可以检查和控制正在运行的求解器会话。
-- **Agent Skills**：封装可复用的安装、建模、求解和后处理工作流。
-- **Text to CAE Viewer**：在浏览器中加载 `result_mesh.json`、项目元数据、参数、时间帧、云图和模型树。
-
-项目仓库：
+## 仓库地址
 
 ```text
-https://github.com/Cai-aa/text-to-cae
+https://github.com/Cai-aa/CAE-Agent-Hub
 ```
 
-相关 Abaqus MCP 仓库：
+部分示例目录仍保留旧名称 `text-to-cae`，用于兼容已有 viewer 案例。
+
+## 架构
 
 ```text
-https://github.com/Cai-aa/abaqus-mcp
+AI client
+  -> MCP server 或 skill instruction
+  -> 正在运行的 CAE 应用或求解器脚本
+  -> 原生求解结果
+  -> 轻量 viewer 数据
+  -> 浏览器检查或报告工作流
 ```
 
-## 推荐工作流
+职责划分：
 
-```text
-Codex 或其他支持 MCP 的 AI 客户端
-  -> 通过 MCP server 连接正在运行的 CAE 应用
-  -> 创建或修改求解器自动化脚本
-  -> 让求解器建模、划分网格、求解、读取结果数据
-  -> 导出 result_mesh.json
-  -> 打开 Text to CAE 浏览器 viewer 查看结果
-```
+- **MCP servers**：给 AI 客户端提供真实 CAE 软件的 live tool access。
+- **Skills**：提供可复用的建模、设置、求解、后处理和验证指令。
+- **CAE applications**：执行真实求解。
+- **Viewer modules**：在不打开求解器的情况下查看导出的结果数据。
 
-这个分工比较清晰：
+## MCP Index
 
-- AI 客户端负责自然语言理解、代码修改、脚本调试和自动化。
-- CAE 应用程序负责真实求解。
-- 浏览器 viewer 负责快速交互式检查 CAE 结果。
+| MCP | 状态 | 用途 | 主要入口 | 触发关键词 |
+| --- | --- | --- | --- | --- |
+| [Abaqus MCP](MCP/Abaqus) | Active | 通过本地 TCP bridge 连接 live Abaqus/CAE；可在 Abaqus kernel 中运行 Python、检查模型、提交 job、监控状态、读取 ODB、截图 viewport。 | `mcp_server.py`, `abaqus_mcp_plugin.py`, `abaqus_plugins/mcp_control/` | Abaqus MCP, Abaqus/CAE, ODB, viewport, submit job |
+| [ANSYS Fluent MCP](MCP/Ansys/Fluent%20MCP) | Active | 检测 Fluent、启动 batch journal、跟踪 job/log，并可管理 live PyFluent session 执行 Scheme、TUI 和 Python 探测。 | `server.py`, `tools/fluent_bridge.py`, `tools/pyfluent_session.py` | Fluent, PyFluent, journal, TUI, CFD |
+| [ANSYS Workbench MCP](MCP/Ansys/Workbench%20MCP) | Active | 通过 Python helper 和 Mechanical ACT bridge 控制 Workbench / Mechanical，支持 file queue 和 socket timer 两种通信方式。 | `server.py`, `tools/`, `workbench_plugin/` | Workbench, Mechanical, ACT, LS-DYNA |
+| [Ansys AEDT MCP](MCP/Ansys/AEDT%20MCP) | Active | 通过 raw TCP JSON bridge 连接 Ansys Electronics Desktop / HFSS；可查看工程、创建 HFSS design、保存工程、执行小段 AEDT Python。 | `mcp_server.py`, `aedt_mcp_bridge.py`, `scripts/install_aedt_toolkit_button.ps1` | AEDT, HFSS, Electronics Desktop, antenna |
 
-## 环境要求
+> 新增 MCP 时，建议保留可复用源码、示例、测试和中英文 README；不要提交虚拟环境、求解结果、私有路径、许可证或生成的工程数据。
 
-- Windows
-- Node.js 和 npm
-- 支持的 CAE 应用程序，例如 Abaqus/CAE 或 Ansys 工具，用于真实求解
-- 相关求解器脚本可用的 Python 环境
-- 可选：支持 MCP 的 AI 客户端，以及本仓库内的 MCP server 或 [Abaqus MCP](https://github.com/Cai-aa/abaqus-mcp)
+## Skill Index
 
-如果某个案例已经包含 `result_mesh.json`，viewer 可以直接显示。只有需要重新求解或从浏览器触发求解器时，才必须安装对应 CAE 软件。
+| Skill | 状态 | 用途 | 触发关键词 |
+| --- | --- | --- | --- |
+| [abaqus](Skill/abaqus/core/abaqus) | Active | Abaqus FEA 脚本和分析工作流的总控路由 skill。 | Abaqus, FEA, finite element, simulation |
+| [abaqus-geometry](Skill/abaqus/modeling/abaqus-geometry) | Active | 创建 part、sketch、extrusion、assembly，并导入 CAD。 | geometry, part, sketch, STEP, IGES |
+| [abaqus-material](Skill/abaqus/modeling/abaqus-material) | Active | 定义材料、section、密度、弹性、塑性和常用工程材料参数。 | material, steel, aluminum, Young's modulus |
+| [abaqus-mesh](Skill/abaqus/modeling/abaqus-mesh) | Active | 生成有限元网格并选择元素类型。 | mesh, elements, nodes, C3D8R |
+| [abaqus-interaction](Skill/abaqus/modeling/abaqus-interaction) | Active | 定义接触、摩擦、tie、connector 和 bonded surface。 | contact, friction, tie, bonded |
+| [abaqus-amplitude](Skill/abaqus/setup/abaqus-amplitude) | Active | 定义 ramp、pulse、cyclic、transient 等随时间变化的 amplitude。 | amplitude, ramp, pulse, cyclic |
+| [abaqus-bc](Skill/abaqus/setup/abaqus-bc) | Active | 定义 fixed、pinned、clamped、displacement、symmetry 等边界条件。 | fixed, clamped, pinned, support |
+| [abaqus-docs](Skill/abaqus/setup/abaqus-docs) | Active | 下载和管理 abqpy / Abaqus API 文档。 | Abaqus docs, API reference, abqpy |
+| [abaqus-field](Skill/abaqus/setup/abaqus-field) | Active | 定义 initial condition 和 predefined field，例如初始温度、残余应力。 | initial condition, predefined field |
+| [abaqus-load](Skill/abaqus/setup/abaqus-load) | Active | 施加集中力、压力、重力和分布载荷。 | force, pressure, gravity, load |
+| [abaqus-output](Skill/abaqus/setup/abaqus-output) | Active | 配置 field output 和 history output 请求。 | output request, field output, history output |
+| [abaqus-step](Skill/abaqus/setup/abaqus-step) | Active | 定义 analysis step、procedure、increment、time period 和 nlgeom 设置。 | step, static step, dynamic step, nlgeom |
+| [abaqus-static-analysis](Skill/abaqus/analysis/abaqus-static-analysis) | Active | 静力结构分析完整工作流，用于应力、位移、反力、强度和刚度评估。 | static, stress, displacement, strength |
+| [abaqus-modal-analysis](Skill/abaqus/analysis/abaqus-modal-analysis) | Active | 提取固有频率和振型，用于振动和共振检查。 | modal, frequency, vibration, resonance |
+| [abaqus-dynamic-analysis](Skill/abaqus/analysis/abaqus-dynamic-analysis) | Active | 动力学完整工作流，用于 impact、crash、drop test、transient、显式/隐式动力学。 | impact, crash, drop test, explicit |
+| [abaqus-thermal-analysis](Skill/abaqus/analysis/abaqus-thermal-analysis) | Active | 稳态或瞬态热传导分析工作流。 | thermal, heat transfer, conduction |
+| [abaqus-coupled-analysis](Skill/abaqus/analysis/abaqus-coupled-analysis) | Active | 热-结构耦合分析，用于 thermal stress 和温度导致的变形。 | thermal stress, expansion, deformation |
+| [abaqus-contact-analysis](Skill/abaqus/analysis/abaqus-contact-analysis) | Active | 多体接触分析，用于摩擦、过盈配合、螺栓和装配接触。 | contact analysis, friction, press fit |
+| [abaqus-fatigue-analysis](Skill/abaqus/analysis/abaqus-fatigue-analysis) | Active | 疲劳和耐久性工作流，用于循环、损伤累计和寿命预测。 | fatigue, durability, cycles |
+| [abaqus-job](Skill/abaqus/execution/abaqus-job) | Active | 创建、提交、监控和管理 Abaqus job 与 input file。 | submit job, input file, execute |
+| [abaqus-export](Skill/abaqus/execution/abaqus-export) | Active | 导出 Abaqus 几何和结果到 STL、STEP、CSV、INP 或外部格式。 | export, STL, STEP, CSV, INP |
+| [abaqus-odb](Skill/abaqus/postprocessing/abaqus-odb) | Active | 读取 ODB 结果并提取应力、位移、反力和结果摘要。 | ODB, maximum stress, displacement |
+| [abaqus-optimization](Skill/abaqus/optimization/abaqus-optimization) | Active | 配置 Tosca optimization 的 response、objective、constraint 和 SIMP 类参数。 | optimization, objective, Tosca |
+| [abaqus-shape-optimization](Skill/abaqus/optimization/abaqus-shape-optimization) | Active | 优化 fillet、notch 或 surface shape，降低峰值应力，不做拓扑删减。 | shape optimization, fillet, notch |
+| [abaqus-topology-optimization](Skill/abaqus/optimization/abaqus-topology-optimization) | Active | 拓扑优化工作流，在保持刚度的同时减少质量。 | topology optimization, weight reduction |
+| [fea-structural](Skill/abaqus/reference/fea-structural) | Reference | 通用结构有限元参考，覆盖静力、动力、非线性和验证。 | structural FEA, nonlinear, validation |
+| [fenics-fem](Skill/abaqus/reference/fenics-fem) | Reference | FEniCS/dolfinx 有限元参考，用于弱形式、gmsh 网格、PDE 和 ParaView 导出。 | FEniCS, dolfinx, PDE, gmsh |
 
-## 安装并启动 Viewer
+> 新增 skill 时，请保留完整 skill 目录，包括 `SKILL.md`、可用的 `metadata.json`、上游来源、references、assets 和工作流脚本。
 
-克隆项目：
+## 安装
+
+### 克隆仓库
 
 ```powershell
-git clone https://github.com/Cai-aa/text-to-cae.git
-Set-Location .\text-to-cae
+git clone https://github.com/Cai-aa/CAE-Agent-Hub.git
+Set-Location .\CAE-Agent-Hub
 ```
 
-安装 viewer 依赖：
+如果你之前克隆的是旧仓库名，GitHub redirect 通常仍然可用，但建议更新 remote：
+
+```powershell
+git remote set-url origin https://github.com/Cai-aa/CAE-Agent-Hub.git
+```
+
+### 使用 MCP server
+
+每个 MCP 目录都有自己的 README 和环境变量模板。通用本地安装方式：
+
+```powershell
+Set-Location ".\MCP\<vendor>\<server folder>"
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -U pip
+.\.venv\Scripts\python.exe -m pip install -e .
+```
+
+然后根据该 MCP 目录中的示例配置，把 server 注册到支持 MCP 的客户端。
+
+### 使用 skills
+
+Skill 是 instruction module，不是求解器二进制文件。请复制完整 skill 目录到 agent 的 skill 目录，或把相关 `SKILL.md` 作为项目上下文。
+
+Codex 示例：
+
+```powershell
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.codex\skills" | Out-Null
+Copy-Item -Recurse -Force ".\Skill\abaqus\analysis\abaqus-static-analysis" "$env:USERPROFILE\.codex\skills\abaqus-static-analysis"
+```
+
+示例提示词：
+
+```text
+Use the abaqus-static-analysis, abaqus-mesh, abaqus-job, and abaqus-odb skills. Build a complete Abaqus static-analysis workflow, run it if the Abaqus MCP or local Abaqus CLI is available, and report the exact files and commands used.
+```
+
+## Text to CAE Viewer
+
+Viewer 仍作为浏览器结果检查层保留。只要案例包含 `result_mesh.json`，即使没有安装求解器也可以查看。
 
 ```powershell
 Set-Location .\viewer
 npm.cmd install
-```
-
-启动本地 viewer：
-
-```powershell
 npm.cmd run dev
 ```
 
-打开：
+打开 Vite 输出的地址，通常是：
 
 ```text
 http://127.0.0.1:4178/
 ```
 
-如果 `4178` 端口被占用，可以指定其他端口：
-
-```powershell
-$env:VIEWER_PORT = "4181"
-npm.cmd run dev
-```
-
-然后打开：
-
-```text
-http://127.0.0.1:4181/
-```
-
-## 打开示例案例
-
-通过 `case` 参数打开指定案例：
+示例案例：
 
 ```text
 http://127.0.0.1:4178/?case=cantilever
@@ -109,281 +155,56 @@ http://127.0.0.1:4178/?case=gear-mesh
 http://127.0.0.1:4178/?case=bullet-plate
 ```
 
-Abaqus 风格结果界面：
+## 仓库结构
 
 ```text
-http://127.0.0.1:4178/?case=sphere-impact&mode=cae
-```
-
-## 通过浏览器运行 Abaqus
-
-Vite dev server 内置了本地 CAE API：
-
-```text
-/__cae/project
-/__cae/result-mesh
-/__cae/result-summary
-/__cae/parameters
-/__cae/run
-```
-
-对于可运行案例，浏览器可以修改参数并触发 Abaqus noGUI：
-
-```text
-viewer
-  -> /__cae/run
-  -> Abaqus noGUI
-  -> *_abaqus.py
-  -> export_*.py
-  -> result_mesh.json
-  -> viewer 刷新结果
-```
-
-默认 Abaqus 路径：
-
-```text
-G:\SIMULIA\Commands\abaqus.bat
-```
-
-如果 Abaqus 安装在其他位置，启动 viewer 前设置：
-
-```powershell
-$env:ABAQUS_COMMAND = "C:\SIMULIA\Commands\abaqus.bat"
-npm.cmd run dev
-```
-
-## 案例文件结构
-
-每个案例通常包含：
-
-```text
-models/<case>/
-  cae_parameters.json
-  cae_project.json
-  *_abaqus.py
-  export_*.py
-  result_mesh.json
-```
-
-文件职责：
-
-- `*_abaqus.py`：创建 Abaqus 模型、材料、网格、分析步、载荷、边界条件并提交 job。
-- `export_*.py`：从 ODB 导出 viewer 可读取的网格、云图、位移、模态或动态帧。
-- `result_mesh.json`：viewer 加载的主要结果数据。
-- `cae_project.json`：项目元数据、流程状态、模型树、输出路径和结果指标。
-- `cae_parameters.json`：浏览器运行面板中的可编辑参数。
-
-## 内置示例
-
-| 案例 | 目录 | 说明 |
-| --- | --- | --- |
-| 悬臂梁 | `models/text-to-cae` | 静力学入门案例，展示位移和应力云图。 |
-| 带孔板拉伸 | `models/text-to-cae-hole-plate` | 展示圆孔板拉伸载荷下的应力集中。 |
-| 带孔板模态 | `models/text-to-cae-hole-plate-modal` | 频率提取案例，可查看不同模态帧。 |
-| 球冲击板材 | `models/text-to-cae-sphere-impact` | 显式动力学案例，展示球板接触、冲击、压痕和回弹。 |
-| 三维铣削 | `models/text-to-cae-milling-3d` | 端铣动力学可视化，包含可编辑加工参数。 |
-| 齿轮啮合 | `models/text-to-cae-gear-mesh` | 直齿轮啮合动力学，包含主动轮和从动轮参数。 |
-| 弹体侵彻板材 | `models/text-to-cae-bullet-plate` | 高速弹体侵彻板材案例。 |
-
-部分大型结果文件不会提交到仓库，需要在本地通过 Abaqus 或刷新脚本重新生成。
-
-## 刷新可视化结果数据
-
-部分案例包含确定性的刷新脚本，可以不等待完整求解就重建浏览器预览数据：
-
-```powershell
-node models\text-to-cae-sphere-impact\refresh_contact_result.mjs
-node models\text-to-cae-milling-3d\refresh_visual_result.mjs
-node models\text-to-cae-gear-mesh\refresh_gear_result.mjs
-```
-
-## 直接运行 Abaqus 脚本
-
-也可以不通过浏览器按钮，直接在命令行运行案例。
-
-球冲击板材：
-
-```powershell
-& "G:\SIMULIA\Commands\abaqus.bat" cae noGUI=models\text-to-cae-sphere-impact\sphere_impact_abaqus.py
-& "G:\SIMULIA\Commands\abaqus.bat" cae noGUI=models\text-to-cae-sphere-impact\export_dynamic_mesh.py
-```
-
-三维铣削：
-
-```powershell
-& "G:\SIMULIA\Commands\abaqus.bat" cae noGUI=models\text-to-cae-milling-3d\milling_abaqus.py
-& "G:\SIMULIA\Commands\abaqus.bat" cae noGUI=models\text-to-cae-milling-3d\export_milling_mesh.py
-```
-
-齿轮啮合：
-
-```powershell
-& "G:\SIMULIA\Commands\abaqus.bat" cae noGUI=models\text-to-cae-gear-mesh\gear_mesh_abaqus.py
-& "G:\SIMULIA\Commands\abaqus.bat" cae noGUI=models\text-to-cae-gear-mesh\export_gear_mesh.py
-```
-
-## 用 MCP 连接 Codex 和 Abaqus
-
-安装 Abaqus MCP：
-
-```powershell
-git clone https://github.com/Cai-aa/abaqus-mcp.git $env:USERPROFILE\.abaqus-mcp
-pip install mcp
-```
-
-让 Abaqus/CAE 加载 MCP 启动环境：
-
-```powershell
-Copy-Item -Force "$env:USERPROFILE\.abaqus-mcp\abaqus_v6.env.example" "$env:USERPROFILE\abaqus_v6.env"
-```
-
-可选 GUI 菜单插件：
-
-```powershell
-Copy-Item -Recurse -Force "$env:USERPROFILE\.abaqus-mcp\abaqus_plugins\mcp_control" "$env:USERPROFILE\abaqus_plugins\mcp_control"
-```
-
-重启 Abaqus/CAE 后，从菜单启动：
-
-```text
-Plug-ins -> MCP -> Start MCP
-```
-
-也可以在 Abaqus Python 控制台启动：
-
-```python
-mcp_start()
-```
-
-如果 Abaqus 版本的后台线程不稳定，可以使用 cooperative 或 blocking loop：
-
-```python
-mcp_coop_loop()
-```
-
-或：
-
-```python
-mcp_loop()
-```
-
-MCP 客户端配置通常类似：
-
-```json
-{
-  "mcpServers": {
-    "abaqus-mcp": {
-      "command": "python",
-      "args": ["C:/Users/<your-user>/.abaqus-mcp/mcp_server.py"]
-    }
-  }
-}
-```
-
-把 `<your-user>` 替换成 Windows 用户名。如果 `python` 不在 `PATH`，可以使用 Python 解释器绝对路径。
-
-## Viewer 操作
-
-界面主要分为：
-
-- 左侧模型树：项目、零件、材料、装配、分析步、载荷、边界条件、网格、作业和结果。
-- 中间三维视窗：云图、网格边线、动态帧、模态、刀具、球、齿轮、弹体等对象。
-- 右侧面板：状态、指标、可编辑参数和运行控制。
-
-常用操作：
-
-- 左键拖动：旋转模型。
-- 中键拖动：平移模型。
-- 鼠标滚轮：缩放。
-- 播放控制：播放动态或模态帧。
-- 主题控制：切换 Abaqus、深色、浅色显示风格。
-
-## 项目结构
-
-```text
-text-to-cae/
-  README.md
-  README.zh-CN.md
-  LICENSE
+CAE-Agent-Hub/
+  MCP/
+    Abaqus/
+    Ansys/
+      AEDT MCP/
+      Fluent MCP/
+      Workbench MCP/
+  Skill/
+    abaqus/
+      core/
+      modeling/
+      setup/
+      analysis/
+      execution/
+      postprocessing/
+      optimization/
+      reference/
   models/
-    text-to-cae/
-    text-to-cae-hole-plate/
-    text-to-cae-hole-plate-modal/
-    text-to-cae-sphere-impact/
-    text-to-cae-milling-3d/
-    text-to-cae-gear-mesh/
-    text-to-cae-bullet-plate/
   viewer/
-    package.json
-    vite.config.mjs
-    main.jsx
-    components/
-      CaeResultViewer.js
-      TextToCaeWorkspace.js
 ```
 
-## Git 和大文件
+## 源码管理规则
 
-仓库会排除生成文件和大型本地文件，例如：
+仓库应该包含可复用源码、文档、测试、示例、模板和 skill instruction。
 
-- `viewer/node_modules/`
-- `viewer/dist/`
-- `viewer/dist-verify/`
-- Abaqus `.odb`
-- Abaqus `.inp`
-- Abaqus 中间文件，例如 `.sim`、`.dat`、`.msg`、`.sta`、`.prt`、`.lck`
-- Python `__pycache__`
-- 超大型生成结果 `result_mesh.json`
+仓库不应该包含：
 
-这些文件可以通过安装依赖、重新构建 viewer、重新运行 Abaqus 脚本或刷新脚本生成。
+- CAE 软件二进制文件或许可证。
+- 私有机器路径或凭据。
+- 虚拟环境和包缓存。
+- 生成的求解器输出，例如 ODB、case/data、AEDT results、Workbench project、日志和截图。
+- 可以重新生成的大型本地结果文件。
 
 ## 构建
 
-构建前端：
+构建前端 viewer：
 
 ```powershell
 Set-Location .\viewer
 npm.cmd run build
 ```
 
-构建产物写入 `viewer/dist/`。
+## 路线图
 
-## 常见问题
+这个 Hub 会继续扩展到更多主流仿真生态：
 
-### 页面打不开
-
-确认 dev server 已启动：
-
-```powershell
-Set-Location .\viewer
-npm.cmd run dev
-```
-
-打开 Vite 输出的地址，通常是：
-
-```text
-http://127.0.0.1:4178/
-```
-
-### 结果没有更新
-
-点击 viewer 中的刷新按钮，或直接刷新浏览器页面。`result_mesh.json` 是运行时加载的，页面可能仍显示上一份结果数据。
-
-### 浏览器里点击运行后 Abaqus 没有启动
-
-检查 `ABAQUS_COMMAND`：
-
-```powershell
-$env:ABAQUS_COMMAND
-```
-
-如果为空或路径错误，启动 viewer 前重新设置：
-
-```powershell
-$env:ABAQUS_COMMAND = "G:\SIMULIA\Commands\abaqus.bat"
-npm.cmd run dev
-```
-
-### clone 后缺少某些结果文件
-
-大型 ODB、INP 和生成结果文件不会提交到仓库。请运行对应 Abaqus 脚本或刷新脚本重新生成。
+- 更多求解器专用 MCP server。
+- 更多产品化 skill pack，用于可复用建模和验证工作流。
+- 面向 viewer 和报告生成的共享结果导出格式。
+- 每个 CAE 应用的安装提示词和验证脚本。
