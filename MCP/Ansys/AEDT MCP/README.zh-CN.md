@@ -8,7 +8,7 @@
 Codex -> FastMCP stdio server -> 单次 PyAEDT Worker -> 明确的 AEDT PID 或 gRPC port
 ```
 
-AEDT 内部不再运行 MCP 脚本、socket server、扩展或后台线程。每次操作启动一个外部 Worker，连接一个明确目标，执行一个命令，调用 `release_desktop(close_projects=False, close_on_exit=False)`，然后退出。MCP 进程不会长期持有 AEDT Automation 对象。
+AEDT 内部不再运行 MCP 脚本、socket server、扩展或后台线程。每次操作启动一个外部 Worker，连接一个明确目标，执行一个命令，然后退出。PID 附加会显式调用 `release_desktop(close_projects=False, close_on_exit=False)`；gRPC Worker 不调用该方法，因为 PyAEDT 会用它停止目标 gRPC server。MCP 进程不会长期持有 AEDT Automation 对象。
 
 ## 安装
 

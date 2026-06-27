@@ -115,7 +115,7 @@ class PyAedtBackendTests(unittest.TestCase):
         self.assertEqual(kwargs["machine"], "localhost")
         self.assertEqual(kwargs["port"], 50051)
         self.assertNotIn("aedt_process_id", kwargs)
-        self.assertEqual(self.desktops[0].releases, [(False, False)])
+        self.assertEqual(self.desktops[0].releases, [])
 
     def test_project_info_is_json_compatible(self):
         result = self.backend.execute(AedtTarget("port", 50051), "project_info", {})
@@ -157,7 +157,7 @@ class PyAedtBackendTests(unittest.TestCase):
         self.assertEqual(app.kwargs["solution_type"], "Modal")
         self.assertEqual(result["project_name"], "FilterProject")
         self.assertEqual(result["design_name"], "FilterDesign")
-        self.assertEqual(app.desktop_class.releases, [(False, False)])
+        self.assertEqual(app.desktop_class.releases, [])
 
     def test_hfss_commands_reject_missing_project_or_design_before_connect(self):
         for command, arguments in (
@@ -194,7 +194,7 @@ class PyAedtBackendTests(unittest.TestCase):
 
         self.assertTrue(result["started"])
         self.assertEqual(self.apps[0].analysis_calls, [("Setup1", False)])
-        self.assertEqual(self.apps[0].desktop_class.releases, [(False, False)])
+        self.assertEqual(self.apps[0].desktop_class.releases, [])
 
     def test_analysis_status_reports_running_state_and_setups(self):
         result = self.backend.execute(

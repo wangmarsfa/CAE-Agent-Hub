@@ -68,7 +68,9 @@ def _object_name(obj: Any) -> str | None:
     return str(name) if name is not None else None
 
 
-def _release(handle: Any) -> None:
+def _release(handle: Any, target: AedtTarget) -> None:
+    if target.kind == "port":
+        return
     desktop = getattr(handle, "desktop_class", handle)
     desktop.release_desktop(close_projects=False, close_on_exit=False)
 
@@ -129,7 +131,7 @@ class PyAedtBackend:
                 return self._project_info(desktop, target)
             return self._save_project(desktop, target, arguments)
         finally:
-            _release(desktop)
+            _release(desktop, target)
 
     def _execute_hfss(
         self,
@@ -185,7 +187,7 @@ class PyAedtBackend:
                 "setups": [str(item) for item in setups],
             }
         finally:
-            _release(app)
+            _release(app, target)
 
     def _ping(self, desktop: Any, target: AedtTarget) -> dict[str, Any]:
         project = desktop.active_project()

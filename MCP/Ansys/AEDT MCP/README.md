@@ -8,7 +8,7 @@ This CAE Agent Hub module lets MCP clients such as Codex control Ansys Electroni
 Codex -> FastMCP stdio server -> one short-lived PyAEDT worker -> explicit AEDT PID or gRPC port
 ```
 
-No MCP script, socket server, extension, or background thread runs inside AEDT. Each operation starts one external worker, connects to exactly one target, performs one command, calls `release_desktop(close_projects=False, close_on_exit=False)`, and exits. The MCP process never retains an AEDT Automation object.
+No MCP script, socket server, extension, or background thread runs inside AEDT. Each operation starts one external worker, connects to exactly one target, performs one command, and exits. PID attachments call `release_desktop(close_projects=False, close_on_exit=False)` explicitly. gRPC workers exit without calling that method because PyAEDT uses it to stop the target gRPC server. The MCP process never retains an AEDT Automation object.
 
 ## Install
 
