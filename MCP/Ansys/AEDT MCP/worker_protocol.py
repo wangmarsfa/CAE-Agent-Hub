@@ -85,6 +85,8 @@ def _normalize_target(target: Any) -> AedtTarget:
         raise WorkerProtocolError("target must be an object with kind and value")
 
     _require_exact_fields(target, {"kind", "value"}, "target")
+    if not isinstance(target["kind"], str):
+        raise WorkerProtocolError("invalid target: kind must be a string")
     try:
         return AedtTarget(kind=target["kind"], value=target["value"])
     except TargetValidationError as exc:
@@ -137,11 +139,15 @@ class WorkerRequest:
         if not isinstance(self.arguments, dict):
             raise WorkerProtocolError("arguments must be an object")
         _validate_json_compatible(self.arguments, "arguments")
-        if (
-            type(self.timeout_seconds) not in {int, float}
-            or not math.isfinite(self.timeout_seconds)
-            or self.timeout_seconds <= 0
-        ):
+        timeout_type = type(self.timeout_seconds)
+        invalid_timeout = timeout_type not in {int, float}
+        if timeout_type is int:
+            invalid_timeout = self.timeout_seconds <= 0
+        elif timeout_type is float:
+            invalid_timeout = (
+                not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0
+            )
+        if invalid_timeout:
             raise WorkerProtocolError(
                 "timeout_seconds must be a finite positive number and not a boolean"
             )

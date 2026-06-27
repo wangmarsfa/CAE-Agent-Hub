@@ -110,6 +110,7 @@ class WorkerRequestTests(unittest.TestCase):
             "pid:123",
             {"kind": "pid"},
             {"kind": "pid", "value": 123, "extra": True},
+            {"kind": [], "value": 123},
             {"kind": "process", "value": 123},
             {"kind": "port", "value": 65536},
         ):
@@ -134,6 +135,14 @@ class WorkerRequestTests(unittest.TestCase):
                 payload["timeout_seconds"] = timeout
                 with self.assertRaisesRegex(WorkerProtocolError, "timeout_seconds"):
                     WorkerRequest.from_dict(payload)
+
+    def test_request_accepts_arbitrarily_large_positive_integer_timeout(self):
+        payload = self._valid_request_dict()
+        payload["timeout_seconds"] = 10**1000
+
+        request = WorkerRequest.from_dict(payload)
+
+        self.assertEqual(request.timeout_seconds, 10**1000)
 
     def test_request_rejects_non_json_argument_values(self):
         for value in ({1, 2}, object(), math.nan, math.inf):
