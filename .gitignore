@@ -2,6 +2,7 @@ viewer/node_modules/
 viewer/dist/
 viewer/dist-verify/
 viewer/*.log
+.worktrees/
 models/**/*.lck
 models/**/*.sim
 models/**/*.023
