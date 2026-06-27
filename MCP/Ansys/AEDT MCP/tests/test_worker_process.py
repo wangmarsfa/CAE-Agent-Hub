@@ -1,4 +1,5 @@
 import asyncio
+from io import StringIO
 import json
 from pathlib import Path
 import sys
@@ -7,7 +8,7 @@ import time
 import unittest
 
 from aedt_target import AedtTarget
-from pyaedt_worker import run_request_line
+from pyaedt_worker import exit_without_pyaedt_cleanup, run_request_line, run_stream
 from worker_client import (
     WorkerClient,
     WorkerProcessError,
@@ -23,6 +24,7 @@ class FakeBackend:
         self.result = result or {"connected": True}
         self.error = error
         self.calls = []
+        self.release_calls = 0
 
     def execute(self, target, command, arguments):
         self.calls.append((target, command, arguments))
@@ -30,8 +32,47 @@ class FakeBackend:
             raise self.error
         return self.result
 
+    def release(self):
+        self.release_calls += 1
+        return True
+
 
 class WorkerEntryPointTests(unittest.TestCase):
+    def test_stream_reuses_backend_until_explicit_release(self):
+        target = AedtTarget("port", 50051)
+        first = WorkerRequest.create("ping", target, {}, 5.0)
+        second = WorkerRequest.create("project_info", target, {}, 5.0)
+        release = WorkerRequest.create("release_connection", target, {}, 5.0)
+        backend = FakeBackend()
+        output = StringIO()
+
+        exit_code = run_stream(
+            StringIO("\n".join((first.to_json(), second.to_json(), release.to_json()))),
+            output,
+            backend_factory=lambda: backend,
+        )
+
+        responses = [WorkerResponse.from_json(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(exit_code, 0)
+        self.assertEqual([call[1] for call in backend.calls], ["ping", "project_info"])
+        self.assertEqual(backend.release_calls, 1)
+        self.assertTrue(responses[-1].result["released"])
+
+    def test_stream_releases_backend_on_stdin_eof(self):
+        request = WorkerRequest.create("ping", AedtTarget("pid", 1234), {}, 5.0)
+        backend = FakeBackend()
+
+        run_stream(StringIO(request.to_json()), StringIO(), backend_factory=lambda: backend)
+
+        self.assertEqual(backend.release_calls, 1)
+
+    def test_process_exit_bypasses_pyaedt_cleanup_handlers(self):
+        exit_codes = []
+
+        exit_without_pyaedt_cleanup(7, exit_fn=exit_codes.append)
+
+        self.assertEqual(exit_codes, [7])
+
     def test_valid_request_returns_success(self):
         request = WorkerRequest.create(
             "ping", AedtTarget("port", 50051), {}, 5.0
@@ -74,8 +115,13 @@ class WorkerClientTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
+        self.clients = []
 
     def tearDown(self):
+        for client in self.clients:
+            close_all = getattr(client, "close_all", None)
+            if close_all:
+                close_all()
         self.temp.cleanup()
 
     def _script(self, name, source):
@@ -84,20 +130,72 @@ class WorkerClientTests(unittest.TestCase):
         return path
 
     def _client(self, script, timeout=2.0):
-        return WorkerClient(
+        client = WorkerClient(
             worker_script=script,
             python_executable=sys.executable,
             log_dir=self.root / "logs",
             default_timeout=timeout,
         )
+        self.clients.append(client)
+        return client
+
+    def test_same_target_reuses_broker_until_release(self):
+        script = self._script(
+            "persistent_worker.py",
+            """import json, sys, uuid
+instance = str(uuid.uuid4())
+for line in sys.stdin:
+    request = json.loads(line)
+    released = request["command"] == "release_connection"
+    result = {"instance": instance, "released": released}
+    print(json.dumps({"request_id": request["request_id"], "ok": True, "result": result, "error": None}), flush=True)
+    if released:
+        break
+""",
+        )
+        client = self._client(script)
+        target = AedtTarget("port", 50051)
+
+        first = client.execute(target, "ping", {})
+        second = client.execute(target, "ping", {})
+        released = client.release(target)
+        third = client.execute(target, "ping", {})
+
+        self.assertEqual(first["instance"], second["instance"])
+        self.assertTrue(released["released"])
+        self.assertNotEqual(first["instance"], third["instance"])
+
+    def test_ping_registers_pid_and_port_aliases_for_one_broker(self):
+        script = self._script(
+            "alias_worker.py",
+            """import json, sys, uuid
+instance = str(uuid.uuid4())
+for line in sys.stdin:
+    request = json.loads(line)
+    released = request["command"] == "release_connection"
+    result = {"instance": instance, "pid": 4321, "port": 50051, "released": released}
+    print(json.dumps({"request_id": request["request_id"], "ok": True, "result": result, "error": None}), flush=True)
+    if released:
+        break
+""",
+        )
+        client = self._client(script)
+
+        by_port = client.execute(AedtTarget("port", 50051), "ping", {})
+        by_pid = client.execute(AedtTarget("pid", 4321), "ping", {})
+
+        self.assertEqual(by_port["instance"], by_pid["instance"])
 
     def test_valid_subprocess_response_and_stderr_log(self):
         script = self._script(
             "valid_worker.py",
             """import json, sys
-request = json.loads(sys.stdin.read())
-sys.stderr.write("worker diagnostic\\n")
-print(json.dumps({"request_id": request["request_id"], "ok": True, "result": {"pid": 7}, "error": None}))
+for line in sys.stdin:
+    request = json.loads(line)
+    sys.stderr.write("worker diagnostic\\n")
+    print(json.dumps({"request_id": request["request_id"], "ok": True, "result": {"pid": 7}, "error": None}), flush=True)
+    if request["command"] == "release_connection":
+        break
 """,
         )
 
@@ -113,7 +211,7 @@ print(json.dumps({"request_id": request["request_id"], "ok": True, "result": {"p
     def test_timeout_terminates_only_worker(self):
         script = self._script(
             "sleep_worker.py",
-            "import time, sys\nsys.stdin.read()\ntime.sleep(30)\n",
+            "import time, sys\nsys.stdin.readline()\ntime.sleep(30)\n",
         )
         client = self._client(script, timeout=0.1)
 
@@ -126,7 +224,7 @@ print(json.dumps({"request_id": request["request_id"], "ok": True, "result": {"p
     def test_invalid_stdout_is_rejected(self):
         script = self._script(
             "invalid_worker.py",
-            "import sys\nsys.stdin.read()\nprint('not-json')\n",
+            "import sys\nsys.stdin.readline()\nprint('not-json', flush=True)\n",
         )
 
         with self.assertRaises(WorkerProtocolOutputError):
@@ -135,7 +233,7 @@ print(json.dumps({"request_id": request["request_id"], "ok": True, "result": {"p
     def test_multiple_stdout_lines_are_rejected(self):
         script = self._script(
             "two_lines.py",
-            "import sys\nsys.stdin.read()\nprint('{}')\nprint('{}')\n",
+            "import sys\nsys.stdin.readline()\nprint('{}', flush=True)\nprint('{}', flush=True)\n",
         )
 
         with self.assertRaisesRegex(WorkerProtocolOutputError, "exactly one"):
@@ -144,7 +242,7 @@ print(json.dumps({"request_id": request["request_id"], "ok": True, "result": {"p
     def test_nonzero_without_valid_response_is_process_error(self):
         script = self._script(
             "failed_worker.py",
-            "import sys\nsys.stdin.read()\nsys.stderr.write('failed')\nraise SystemExit(3)\n",
+            "import sys\nsys.stdin.readline()\nsys.stderr.write('failed')\nraise SystemExit(3)\n",
         )
 
         with self.assertRaises(WorkerProcessError):
@@ -154,7 +252,7 @@ print(json.dumps({"request_id": request["request_id"], "ok": True, "result": {"p
         script = self._script(
             "remote_error.py",
             """import json, sys
-request = json.loads(sys.stdin.read())
+request = json.loads(sys.stdin.readline())
 print(json.dumps({"request_id": request["request_id"], "ok": False, "result": None, "error": {"code": "session_not_found", "message": "missing", "detail": {"pid": 7}}}))
 raise SystemExit(1)
 """,
@@ -169,7 +267,7 @@ raise SystemExit(1)
     def test_mismatched_request_id_is_rejected(self):
         script = self._script(
             "wrong_id.py",
-            "import sys\nsys.stdin.read()\nprint('{\"request_id\":\"wrong\",\"ok\":true,\"result\":{},\"error\":null}')\n",
+            "import sys\nsys.stdin.readline()\nprint('{\"request_id\":\"wrong\",\"ok\":true,\"result\":{},\"error\":null}', flush=True)\n",
         )
 
         with self.assertRaisesRegex(WorkerProtocolOutputError, "request_id"):

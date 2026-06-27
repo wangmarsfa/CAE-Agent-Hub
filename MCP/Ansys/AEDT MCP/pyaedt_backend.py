@@ -68,11 +68,22 @@ def _object_name(obj: Any) -> str | None:
     return str(name) if name is not None else None
 
 
-def _release(handle: Any, target: AedtTarget) -> None:
-    if target.kind == "port":
-        return
+def _release(handle: Any) -> bool:
     desktop = getattr(handle, "desktop_class", handle)
-    desktop.release_desktop(close_projects=False, close_on_exit=False)
+    return bool(desktop.release_desktop(close_projects=False, close_on_exit=False))
+
+
+def _active_design(desktop: Any, project: Any) -> Any:
+    if project is None:
+        return None
+    project_name = _object_name(project)
+    try:
+        designs = list(_read_value(desktop, "design_list", project_name))
+    except AttributeError:
+        designs = None
+    if designs == []:
+        return None
+    return desktop.active_design(project)
 
 
 class PyAedtBackend:
@@ -86,6 +97,9 @@ class PyAedtBackend:
         self._desktop_factory = desktop_factory or _default_desktop_factory
         self._hfss_factory = hfss_factory or _default_hfss_factory
         self._version = version
+        self._desktop: Any = None
+        self._bound_target: AedtTarget | None = None
+        self._apps: dict[tuple[str, str, str | None], Any] = {}
 
     def execute(
         self,
@@ -103,6 +117,34 @@ class PyAedtBackend:
         if command in _DESKTOP_COMMANDS:
             return self._execute_desktop(target, command, arguments)
         return self._execute_hfss(target, command, arguments)
+
+    def release(self) -> bool:
+        if self._desktop is None:
+            return False
+        desktop = self._desktop
+        self._apps.clear()
+        self._desktop = None
+        self._bound_target = None
+        return _release(desktop)
+
+    def _desktop_for(self, target: AedtTarget) -> Any:
+        if self._desktop is None:
+            self._desktop = self._desktop_factory(**self._connection_kwargs(target))
+            self._bound_target = target
+            return self._desktop
+
+        if not self._target_matches(target):
+            raise BackendCommandError(
+                f"broker is bound to {self._bound_target.key}; requested {target.key}"
+            )
+        return self._desktop
+
+    def _target_matches(self, target: AedtTarget) -> bool:
+        if target == self._bound_target:
+            return True
+        if target.kind == "pid":
+            return getattr(self._desktop, "aedt_process_id", None) == target.value
+        return getattr(self._desktop, "port", None) == target.value
 
     def _connection_kwargs(self, target: AedtTarget) -> dict[str, Any]:
         kwargs: dict[str, Any] = {
@@ -123,15 +165,12 @@ class PyAedtBackend:
         command: str,
         arguments: Mapping[str, Any],
     ) -> dict[str, Any]:
-        desktop = self._desktop_factory(**self._connection_kwargs(target))
-        try:
-            if command == "ping":
-                return self._ping(desktop, target)
-            if command == "project_info":
-                return self._project_info(desktop, target)
-            return self._save_project(desktop, target, arguments)
-        finally:
-            _release(desktop, target)
+        desktop = self._desktop_for(target)
+        if command == "ping":
+            return self._ping(desktop, target)
+        if command == "project_info":
+            return self._project_info(desktop, target)
+        return self._save_project(desktop, target, arguments)
 
     def _execute_hfss(
         self,
@@ -141,7 +180,8 @@ class PyAedtBackend:
     ) -> dict[str, Any]:
         project_name = _required_text(arguments, "project_name")
         design_name = _required_text(arguments, "design_name")
-        kwargs = self._connection_kwargs(target)
+        self._desktop_for(target)
+        kwargs = self._connection_kwargs(self._bound_target or target)
         kwargs.update({"project": project_name, "design": design_name})
 
         if command == "create_hfss_design":
@@ -153,45 +193,46 @@ class PyAedtBackend:
         elif command == "start_analysis":
             kwargs["setup"] = _required_text(arguments, "setup_name")
 
-        app = self._hfss_factory(**kwargs)
-        try:
-            if command == "create_hfss_design":
-                return {
-                    "target": _target_dict(target),
-                    "project_name": str(getattr(app, "project_name", project_name)),
-                    "design_name": str(getattr(app, "design_name", design_name)),
-                    "solution_type": str(getattr(app, "solution_type", kwargs["solution_type"])),
-                }
-            if command == "start_analysis":
-                blocking = arguments.get("blocking", False)
-                if not isinstance(blocking, bool):
-                    raise BackendCommandError("blocking must be a boolean")
-                setup_name = kwargs["setup"]
-                started = bool(app.analyze_setup(name=setup_name, blocking=blocking))
-                return {
-                    "target": _target_dict(target),
-                    "project_name": project_name,
-                    "design_name": design_name,
-                    "setup_name": setup_name,
-                    "blocking": blocking,
-                    "started": started,
-                }
-
-            running = bool(_read_value(app, "are_there_simulations_running"))
-            setups = list(app.get_setups())
+        app_key = (project_name, design_name, kwargs.get("solution_type"))
+        app = self._apps.get(app_key)
+        if app is None:
+            app = self._hfss_factory(**kwargs)
+            self._apps[app_key] = app
+        if command == "create_hfss_design":
+            return {
+                "target": _target_dict(target),
+                "project_name": str(getattr(app, "project_name", project_name)),
+                "design_name": str(getattr(app, "design_name", design_name)),
+                "solution_type": str(getattr(app, "solution_type", kwargs["solution_type"])),
+            }
+        if command == "start_analysis":
+            blocking = arguments.get("blocking", False)
+            if not isinstance(blocking, bool):
+                raise BackendCommandError("blocking must be a boolean")
+            setup_name = kwargs["setup"]
+            started = bool(app.analyze_setup(name=setup_name, blocking=blocking))
             return {
                 "target": _target_dict(target),
                 "project_name": project_name,
                 "design_name": design_name,
-                "running": running,
-                "setups": [str(item) for item in setups],
+                "setup_name": setup_name,
+                "blocking": blocking,
+                "started": started,
             }
-        finally:
-            _release(app, target)
+
+        running = bool(_read_value(app, "are_there_simulations_running"))
+        setups = list(app.get_setups())
+        return {
+            "target": _target_dict(target),
+            "project_name": project_name,
+            "design_name": design_name,
+            "running": running,
+            "setups": [str(item) for item in setups],
+        }
 
     def _ping(self, desktop: Any, target: AedtTarget) -> dict[str, Any]:
         project = desktop.active_project()
-        design = desktop.active_design(project) if project is not None else None
+        design = _active_design(desktop, project)
         return {
             "connected": True,
             "target": _target_dict(target),
@@ -205,7 +246,7 @@ class PyAedtBackend:
     def _project_info(self, desktop: Any, target: AedtTarget) -> dict[str, Any]:
         projects = list(_read_value(desktop, "project_list"))
         project = desktop.active_project()
-        design = desktop.active_design(project) if project is not None else None
+        design = _active_design(desktop, project)
         project_name = _object_name(project)
         design_name = _object_name(design)
         design_type = None

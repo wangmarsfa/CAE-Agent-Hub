@@ -4,6 +4,7 @@ import unittest
 
 from aedt_launcher import AedtLauncher
 from aedt_target import AedtTarget
+from tests.live.run_acceptance import normal_close_while_connected
 from worker_client import WorkerClient
 
 
@@ -20,7 +21,11 @@ class Aedt2026R1LiveTests(unittest.TestCase):
         cls.artifacts.mkdir(parents=True, exist_ok=True)
         cls.client = WorkerClient(log_dir=cls.artifacts / "logs")
 
-    def test_grpc_session_supports_repeated_workers_and_disposable_project(self):
+    @classmethod
+    def tearDownClass(cls):
+        cls.client.close_all()
+
+    def test_grpc_session_supports_repeated_broker_calls_and_normal_close(self):
         session = AedtLauncher(worker_client=self.client).launch(
             install_dir=self.aedt_root,
             port=self.port,
@@ -53,6 +58,7 @@ class Aedt2026R1LiveTests(unittest.TestCase):
         )
         self.assertTrue(saved["saved"])
         self.assertTrue(project_path.exists())
+        normal_close_while_connected(session["pid"])
 
 
 if __name__ == "__main__":

@@ -13,12 +13,13 @@ from session_discovery import SessionDiscovery
 from worker_client import WorkerClient
 
 
-INSTRUCTIONS = """Control Ansys Electronics Desktop 2026 R1 through external PyAEDT workers.
+INSTRUCTIONS = """Control Ansys Electronics Desktop 2026 R1 through external PyAEDT brokers.
 
 Call list_aedt_sessions first. Every operation that touches AEDT requires exactly
 one explicit PID or gRPC port; there is no implicit or automatic session target.
 Prefer the gRPC port returned by launch_aedt for MCP-launched sessions. Each tool
-uses a short-lived worker that releases PyAEDT without closing projects or AEDT.
+reuses one external broker per target. Call release_connection when finished;
+the broker also releases PyAEDT automatically when the MCP server exits.
 """
 
 mcp = FastMCP("ansys-aedt-mcp-server", instructions=INSTRUCTIONS)
@@ -91,9 +92,9 @@ async def release_connection(
     port: int | None = None,
     timeout: float | None = None,
 ) -> dict[str, Any]:
-    """Attach and release one explicit AEDT target without closing it."""
-    result = await _worker_call("ping", pid=pid, port=port, timeout=timeout)
-    return {**result, "released": True}
+    """Release the broker for one explicit AEDT target without closing AEDT."""
+    target = _target(pid, port)
+    return await worker_client.release_async(target, timeout=timeout)
 
 
 @mcp.tool()

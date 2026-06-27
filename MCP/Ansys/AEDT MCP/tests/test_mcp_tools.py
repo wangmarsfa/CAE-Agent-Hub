@@ -16,6 +16,13 @@ class FakeWorkerClient:
             **arguments,
         }
 
+    async def release_async(self, target, timeout=None):
+        self.calls.append((target, "release_connection", {}, timeout))
+        return {
+            "target": {"kind": target.kind, "value": target.value},
+            "released": True,
+        }
+
 
 class FakeDiscovery:
     def __init__(self):
@@ -78,13 +85,14 @@ class McpToolTests(unittest.IsolatedAsyncioTestCase):
                     await call()
         self.assertEqual(self.worker.calls, [])
 
-    async def test_check_and_release_use_ping_worker(self):
+    async def test_check_uses_ping_and_release_stops_broker(self):
         checked = await mcp_server.check_aedt_connection(pid=101)
         released = await mcp_server.release_connection(port=50051)
 
         self.assertEqual(checked["target"], {"kind": "pid", "value": 101})
         self.assertEqual(self.worker.calls[0][1], "ping")
         self.assertEqual(self.worker.calls[1][0].key, "port:50051")
+        self.assertEqual(self.worker.calls[1][1], "release_connection")
         self.assertTrue(released["released"])
 
     async def test_project_and_save_tools_preserve_explicit_target(self):

@@ -25,15 +25,25 @@ class FakeProcess:
 
 
 class FakeWorkerClient:
-    def __init__(self, failures=0):
+    def __init__(self, failures=0, reported_pid=9876):
         self.failures = failures
+        self.reported_pid = reported_pid
         self.calls = []
+        self.releases = []
 
     def execute(self, target, command, arguments, timeout=None):
         self.calls.append((target, command, arguments, timeout))
         if len(self.calls) <= self.failures:
             raise RuntimeError("not ready")
-        return {"connected": True, "aedt_version": "2026.1"}
+        return {
+            "connected": True,
+            "aedt_version": "2026.1",
+            "pid": self.reported_pid,
+        }
+
+    def release(self, target, timeout=None):
+        self.releases.append((target, timeout))
+        return {"released": True}
 
 
 class FakeClock:
@@ -87,11 +97,20 @@ class AedtLauncherTests(unittest.TestCase):
         self.assertNotIn("-ng", self.commands[0][0])
         self.assertEqual(self.worker.calls[0][0].key, "port:50051")
         self.assertEqual(result, {
-            "pid": 4321,
+            "pid": 9876,
             "port": 50051,
             "version": "2026.1",
             "connection_mode": "grpc",
         })
+
+    def test_launch_falls_back_to_process_pid_when_probe_omits_pid(self):
+        self.worker = FakeWorkerClient(reported_pid=None)
+
+        result = self._launcher().launch(
+            version="2026.1", port=50051, install_dir=self.install, timeout=5.0
+        )
+
+        self.assertEqual(result["pid"], 4321)
 
     def test_zero_port_selects_free_port(self):
         result = self._launcher().launch(port=0, install_dir=self.install)
@@ -120,7 +139,7 @@ class AedtLauncherTests(unittest.TestCase):
 
         result = launcher.launch(port=50051, install_dir=self.install, timeout=5.0)
 
-        self.assertEqual(result["pid"], 4321)
+        self.assertEqual(result["pid"], 9876)
         self.assertEqual(len(self.worker.calls), 2)
         self.assertGreater(self.clock.now, 0)
 
@@ -132,6 +151,21 @@ class AedtLauncherTests(unittest.TestCase):
 
         self.assertFalse(self.process.terminate_called)
         self.assertFalse(self.process.kill_called)
+
+    def test_timeout_releases_probe_broker_without_terminating_aedt(self):
+        self.worker = FakeWorkerClient(failures=100)
+        launcher = self._launcher(port_is_open=lambda port: True)
+
+        with self.assertRaisesRegex(AedtLaunchError, "timed out"):
+            launcher.launch(
+                version="2026.1",
+                port=50051,
+                install_dir=self.install,
+                timeout=0.5,
+            )
+
+        self.assertEqual(self.worker.releases[0][0].key, "port:50051")
+        self.assertFalse(self.process.terminate_called)
 
     def test_early_process_exit_is_reported_without_kill(self):
         self.process.returncode = 5

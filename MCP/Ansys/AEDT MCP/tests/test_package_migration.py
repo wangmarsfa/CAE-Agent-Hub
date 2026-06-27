@@ -31,7 +31,9 @@ class PackageMigrationTests(unittest.TestCase):
                 self.assertIn("PyAEDT", content)
                 self.assertIn("PID", content)
                 self.assertIn("port", content.lower())
+                self.assertIn("broker", content.lower())
                 self.assertIn("release_desktop", content)
+                self.assertIn("release_connection", content)
                 self.assertNotIn("aedt_mcp_bridge.py", content)
                 self.assertNotIn("click `Start AEDT MCP Bridge`", content)
 

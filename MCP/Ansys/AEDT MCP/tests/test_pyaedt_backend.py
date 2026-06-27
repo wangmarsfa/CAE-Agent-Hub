@@ -25,7 +25,7 @@ class FakeProject:
 
 
 class FakeDesktop:
-    def __init__(self, *, fail_projects=False, **kwargs):
+    def __init__(self, *, fail_projects=False, is_grpc_api=None, **kwargs):
         self.kwargs = kwargs
         self.fail_projects = fail_projects
         self.releases = []
@@ -33,6 +33,9 @@ class FakeDesktop:
         self.aedt_version_id = "2026.1"
         self.aedt_process_id = kwargs.get("aedt_process_id", 4321)
         self.port = kwargs.get("port", 0)
+        self.is_grpc_api = (
+            kwargs.get("port") is not None if is_grpc_api is None else is_grpc_api
+        )
         self.project = FakeProject()
 
     @property
@@ -45,10 +48,15 @@ class FakeDesktop:
         return self.project
 
     def active_design(self, project=None):
+        if self.project.design is None:
+            raise IndexError("no designs")
         return self.project.design
 
     def design_type(self, project_name=None, design_name=None):
         return "HFSS"
+
+    def design_list(self, project_name=None):
+        return [self.project.design.GetName()] if self.project.design is not None else []
 
     def save_project(self, project_name=None, project_path=None):
         self.saved.append((project_name, project_path))
@@ -88,9 +96,8 @@ class PyAedtBackendTests(unittest.TestCase):
             return desktop
 
         def hfss_factory(**kwargs):
-            desktop = FakeDesktop(**kwargs)
+            desktop = self.desktops[0]
             app = FakeHfss(desktop, **kwargs)
-            self.desktops.append(desktop)
             self.apps.append(app)
             return app
 
@@ -99,16 +106,19 @@ class PyAedtBackendTests(unittest.TestCase):
             hfss_factory=hfss_factory,
         )
 
-    def test_pid_connection_arguments_and_release(self):
+    def test_pid_connection_arguments_and_explicit_release(self):
         result = self.backend.execute(AedtTarget("pid", 66276), "ping", {})
 
         self.assertTrue(result["connected"])
         self.assertEqual(result["target"], {"kind": "pid", "value": 66276})
         self.assertEqual(self.desktops[0].kwargs["aedt_process_id"], 66276)
         self.assertNotIn("port", self.desktops[0].kwargs)
+        self.assertEqual(self.desktops[0].releases, [])
+
+        self.assertTrue(self.backend.release())
         self.assertEqual(self.desktops[0].releases, [(False, False)])
 
-    def test_port_connection_arguments_and_release(self):
+    def test_port_connection_arguments_and_explicit_release(self):
         self.backend.execute(AedtTarget("port", 50051), "ping", {})
 
         kwargs = self.desktops[0].kwargs
@@ -116,6 +126,26 @@ class PyAedtBackendTests(unittest.TestCase):
         self.assertEqual(kwargs["port"], 50051)
         self.assertNotIn("aedt_process_id", kwargs)
         self.assertEqual(self.desktops[0].releases, [])
+        self.assertTrue(self.backend.release())
+        self.assertEqual(self.desktops[0].releases, [(False, False)])
+
+    def test_multiple_commands_reuse_one_desktop_connection(self):
+        target = AedtTarget("port", 50051)
+
+        self.backend.execute(target, "ping", {})
+        self.backend.execute(target, "project_info", {})
+
+        self.assertEqual(len(self.desktops), 1)
+
+    def test_ping_handles_project_without_design(self):
+        desktop = FakeDesktop(aedt_process_id=1234)
+        desktop.project.design = None
+        backend = PyAedtBackend(desktop_factory=lambda **kwargs: desktop)
+
+        result = backend.execute(AedtTarget("pid", 1234), "ping", {})
+
+        self.assertEqual(result["active_project"], "Demo")
+        self.assertIsNone(result["active_design"])
 
     def test_project_info_is_json_compatible(self):
         result = self.backend.execute(AedtTarget("port", 50051), "project_info", {})
@@ -125,13 +155,15 @@ class PyAedtBackendTests(unittest.TestCase):
         self.assertEqual(result["active_design"], "HFSSDesign1")
         self.assertEqual(result["design_type"], "HFSS")
 
-    def test_release_runs_when_command_raises(self):
+    def test_command_error_keeps_connection_until_explicit_release(self):
         desktop = FakeDesktop(fail_projects=True)
         backend = PyAedtBackend(desktop_factory=lambda **kwargs: desktop)
 
         with self.assertRaisesRegex(RuntimeError, "project lookup failed"):
             backend.execute(AedtTarget("pid", 1234), "project_info", {})
 
+        self.assertEqual(desktop.releases, [])
+        self.assertTrue(backend.release())
         self.assertEqual(desktop.releases, [(False, False)])
 
     def test_unknown_command_does_not_connect(self):
@@ -207,6 +239,15 @@ class PyAedtBackendTests(unittest.TestCase):
         self.assertEqual(result["setups"], ["Setup1"])
         self.assertEqual(result["project_name"], "Demo")
         self.assertEqual(result["design_name"], "HFSSDesign1")
+
+    def test_repeated_hfss_commands_reuse_application_wrapper(self):
+        target = AedtTarget("port", 50051)
+        arguments = {"project_name": "Demo", "design_name": "HFSSDesign1"}
+
+        self.backend.execute(target, "analysis_status", arguments)
+        self.backend.execute(target, "analysis_status", arguments)
+
+        self.assertEqual(len(self.apps), 1)
 
 
 if __name__ == "__main__":

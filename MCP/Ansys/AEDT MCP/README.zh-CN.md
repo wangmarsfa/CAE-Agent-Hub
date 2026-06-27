@@ -5,10 +5,12 @@
 ## 架构
 
 ```text
-Codex -> FastMCP stdio server -> 单次 PyAEDT Worker -> 明确的 AEDT PID 或 gRPC port
+Codex -> FastMCP stdio server -> 外部 PyAEDT broker -> 明确的 AEDT PID 或 gRPC port
 ```
 
-AEDT 内部不再运行 MCP 脚本、socket server、扩展或后台线程。每次操作启动一个外部 Worker，连接一个明确目标，执行一个命令，然后退出。PID 附加会显式调用 `release_desktop(close_projects=False, close_on_exit=False)`；gRPC Worker 不调用该方法，因为 PyAEDT 会用它停止目标 gRPC server。MCP 进程不会长期持有 AEDT Automation 对象。
+AEDT 内部不运行 MCP 脚本、socket server、扩展或后台线程。MCP 会为每个明确目标建立一个外部 broker，并在多次命令之间复用同一条 PyAEDT 连接。只有调用 `release_connection`、MCP 退出或 broker 的 stdin 关闭时，broker 才执行 `release_desktop(close_projects=False, close_on_exit=False)`。
+
+AEDT 2026 R1 的 gRPC 会话要求客户端持续存在；如果每条命令后都结束 PyAEDT 客户端，对应 gRPC 监听也会消失。外部 broker 既避免每次工具调用重建 AEDT，也不会在 AEDT 内留下 Toolkit/Automation 脚本状态。
 
 ## 安装
 
@@ -20,82 +22,59 @@ py -3.10 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e .
 ```
 
-项目固定使用 PyAEDT 1.1.0，支持 AEDT 2026 R1。
-
-根据 `.env.example` 配置 MCP 客户端。使用 `launch_aedt` 时，`AEDT_INSTALL_DIR` 必须指向包含 `ansysedt.exe` 的目录。
+项目固定使用面向 AEDT 2026 R1 的 PyAEDT 1.1.0。使用 `launch_aedt` 时，`AEDT_INSTALL_DIR` 必须指向包含 `ansysedt.exe` 的目录。
 
 ## MCP 配置
 
-参考 `examples/mcp_config.example.json`，将 `<repo>` 替换成本目录的绝对路径。
+参考 `examples/mcp_config.example.json`，把 `<repo>` 替换为本目录的绝对路径。
 
-## 会话选择
+## 明确指定目标
 
 系统没有隐式默认 AEDT 会话。
 
-1. 调用 `list_aedt_sessions`。
-2. 明确选择一个进程 PID 或 gRPC port。
-3. 每个操作工具必须且只能传入 `pid` 或 `port` 之一。
+1. 调用 `list_aedt_sessions` 或 `launch_aedt`。
+2. 明确选择一个 PID 或一个 gRPC port。
+3. 每个目标工具必须且只能传入 `pid` 或 `port` 之一。
 
-同时打开多个 AEDT 时，不会自动选择最近启动或前台窗口。通过 `launch_aedt` 启动的会话优先使用返回的 gRPC port。
+服务器不会自动选择最近启动或前台窗口。探测成功后，返回的 PID 和 port 会登记为同一个 broker 的别名，因此后续可以继续使用任一明确标识访问同一会话。
 
-## 使用方式
+## 生命周期
 
-### 连接用户手动打开的 AEDT
+- `check_aedt_connection` 在首次使用时创建 broker，并执行真实 PyAEDT 探测。
+- 工程和仿真工具复用该 broker。
+- `release_connection` 断开 broker，但不请求关闭工程或 AEDT。
+- MCP 正常退出或 broker stdin 关闭时也会释放全部连接。
+- broker 超时只会结束 broker，不会强制结束 AEDT。
 
-1. 正常启动图形化 AEDT 2026 R1。
-2. 调用 `list_aedt_sessions` 找到目标 PID。
-3. 调用 `check_aedt_connection(pid=<PID>)`。
-4. 后续工程和求解工具继续使用同一个 PID。
-
-### 启动可见的 gRPC AEDT
-
-1. 调用 `launch_aedt(port=0)`。
-2. 保存返回的 PID 和 port。
-3. 后续工具使用该 port。
-
-启动命令为 `ansysedt.exe -grpcsrv <port>`，不会添加非图形模式参数。若启动超时，AEDT 会保留运行供检查，MCP 不会强制结束它。
+通过 MCP 启动的会话优先使用 `launch_aedt` 返回的 port。用户手动打开的 AEDT 应从 `list_aedt_sessions` 中选择 PID。
 
 ## 工具
 
-- `list_aedt_sessions`：只读发现 AEDT PID 和本地监听端口，不附加会话。
-- `launch_aedt`：启动图形化 AEDT 2026 R1 gRPC 会话。
-- `check_aedt_connection`：对明确目标执行真实 PyAEDT 探测。
-- `release_connection`：执行连接和释放验证，不关闭 AEDT。
-- `get_project_info`：读取活动工程和设计信息。
+- `list_aedt_sessions`：只读发现 AEDT PID 和本地监听端口。
+- `launch_aedt`：使用明确 gRPC port 启动可见 AEDT 2026 R1。
+- `check_aedt_connection`：探测一个明确目标。
+- `release_connection`：停止并释放该目标的 broker。
+- `get_project_info`：读取工程和活动设计信息。
 - `create_hfss_design`：创建或激活指定 HFSS design。
-- `save_project`：保存当前工程或另存到指定路径。
+- `save_project`：保存当前工程，可指定另存路径。
 - `start_analysis`：启动指定 HFSS setup，默认非阻塞。
-- `get_analysis_status`：查询求解状态和 setup 列表。
+- `get_analysis_status`：查询求解状态和 setup。
 
-资源：
-
-- `aedt://status`：只做会话发现，不附加 AEDT。
-- `aedt://agent-instructions`：目标选择和生命周期规则。
-
-## 故障隔离
-
-- 每个 Worker 都有超时。
-- Worker 超时只结束 Worker，不结束 AEDT。
-- 同一目标的操作串行执行。
-- 不同明确目标可以独立执行。
-- PyAEDT 日志写入 `AEDT_LOG_DIR`，不会污染 MCP stdio JSON。
+资源 `aedt://status` 与 `aedt://agent-instructions` 不会隐式连接 AEDT。
 
 ## 清理旧工具栏
 
-旧版曾在 AEDT 中安装 `Start AEDT MCP Bridge` 和 `Stop AEDT MCP Bridge`。新版不再使用这些按钮。可运行：
+旧版的 `Start AEDT MCP Bridge` 和 `Stop AEDT MCP Bridge` 按钮不再使用。只清理这些已知条目：
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\remove_legacy_aedt_mcp_toolbar.ps1" -AedtRoot "G:\ANSYS206\ANSYS Inc\v261\AnsysEM"
 ```
 
-脚本只移除已知旧按钮和脚本，保留 `TabConfig.xml.bak_aedt_mcp` 以及其他 Toolkit 配置。清理后重启 AEDT。
-
 ## 验证
-
-离线测试：
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\scripts\run_live_acceptance.ps1 -Mode both
 ```
 
-实机验收必须同时覆盖 PID 附加和 gRPC 启动，并确认正常关闭 AEDT 时不再出现“being used by another application, script or extension wizard”弹窗。
+实机验收覆盖明确 PID/port、同一 broker 连续命令、一次性 HFSS 工程保存，以及 broker 仍连接时正常关闭 AEDT。若出现“being used by another application, script or extension wizard”弹窗，测试会失败。

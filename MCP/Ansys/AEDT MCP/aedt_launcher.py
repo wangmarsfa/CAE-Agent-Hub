@@ -125,8 +125,14 @@ class AedtLauncher:
                     )
                     reported_version = str(info.get("aedt_version", version)) if isinstance(info, dict) else version
                     if reported_version == version:
+                        reported_pid = info.get("pid") if isinstance(info, dict) else None
+                        aedt_pid = (
+                            reported_pid
+                            if type(reported_pid) is int and reported_pid > 0
+                            else int(process.pid)
+                        )
                         return {
-                            "pid": int(process.pid),
+                            "pid": aedt_pid,
                             "port": selected_port,
                             "version": version,
                             "connection_mode": "grpc",
@@ -135,6 +141,10 @@ class AedtLauncher:
                     pass
             self._sleep(0.25)
 
+        try:
+            self._worker_client.release(target, timeout=2.0)
+        except Exception:
+            pass
         raise AedtLaunchError(
             f"timed out after {effective_timeout:g}s waiting for AEDT gRPC port {selected_port}; "
             f"AEDT PID {process.pid} was left running for inspection"

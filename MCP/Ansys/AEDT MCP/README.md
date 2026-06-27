@@ -1,14 +1,16 @@
 # Ansys AEDT MCP
 
-This CAE Agent Hub module lets MCP clients such as Codex control Ansys Electronics Desktop 2026 R1 through PyAEDT.
+This module lets MCP clients such as Codex control Ansys Electronics Desktop 2026 R1 through PyAEDT.
 
 ## Architecture
 
 ```text
-Codex -> FastMCP stdio server -> one short-lived PyAEDT worker -> explicit AEDT PID or gRPC port
+Codex -> FastMCP stdio server -> external PyAEDT broker -> explicit AEDT PID or gRPC port
 ```
 
-No MCP script, socket server, extension, or background thread runs inside AEDT. Each operation starts one external worker, connects to exactly one target, performs one command, and exits. PID attachments call `release_desktop(close_projects=False, close_on_exit=False)` explicitly. gRPC workers exit without calling that method because PyAEDT uses it to stop the target gRPC server. The MCP process never retains an AEDT Automation object.
+No MCP script, socket server, extension, or background thread runs inside AEDT. The MCP server creates one external broker for each selected target and reuses that PyAEDT connection across commands. The broker calls `release_desktop(close_projects=False, close_on_exit=False)` only when `release_connection` is called, the MCP process exits, or its stdin closes.
+
+This lifecycle is required for AEDT 2026 R1 gRPC sessions: ending the PyAEDT client after every command also ends that session's gRPC listener. Keeping the connection in an external broker avoids rebuilding AEDT for each tool call without leaving Toolkit/Automation code running in AEDT.
 
 ## Install
 
@@ -20,82 +22,59 @@ py -3.10 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e .
 ```
 
-The package pins PyAEDT 1.1.0, which supports AEDT 2026 R1.
+The package pins PyAEDT 1.1.0 for AEDT 2026 R1. Set `AEDT_INSTALL_DIR` to the directory containing `ansysedt.exe` when using `launch_aedt`.
 
-Copy the relevant values from `.env.example` into the MCP client environment. `AEDT_INSTALL_DIR` must contain `ansysedt.exe` when `launch_aedt` is used.
+## MCP Configuration
 
-## MCP configuration
+Use `examples/mcp_config.example.json` and replace `<repo>` with this directory's absolute path.
 
-Use `examples/mcp_config.example.json` and replace `<repo>` with the absolute path to this directory.
-
-## Session selection
+## Explicit Targeting
 
 There is no implicit AEDT session.
 
-1. Call `list_aedt_sessions`.
-2. Choose one process PID or one gRPC port.
+1. Call `list_aedt_sessions` or `launch_aedt`.
+2. Choose one PID or one gRPC port.
 3. Pass exactly one of `pid` or `port` to every targeted tool.
 
-When multiple AEDT sessions are open, the server never chooses the newest or foreground window. Port targeting is preferred for sessions created by `launch_aedt`.
+The server never chooses the newest or foreground AEDT window. A successful probe records the returned PID and port as aliases for the same broker, so either explicit identifier continues to address that same session.
 
-## Workflows
+## Lifecycle
 
-### Attach to an AEDT window opened by the user
+- `check_aedt_connection` creates the broker on first use and performs a real PyAEDT probe.
+- Project and analysis tools reuse that broker.
+- `release_connection` disconnects the broker without requesting project or AEDT closure.
+- MCP shutdown and broker stdin EOF also release all connections.
+- A timed-out broker is terminated; the AEDT process is never force-terminated.
 
-1. Start graphical AEDT 2026 R1 normally.
-2. Call `list_aedt_sessions` and identify its PID.
-3. Call `check_aedt_connection(pid=<PID>)`.
-4. Use the same PID for project and analysis tools.
-
-### Launch a visible gRPC AEDT session
-
-1. Call `launch_aedt(port=0)`.
-2. Keep the returned PID and port.
-3. Target subsequent tools with the returned port.
-
-The launcher uses `ansysedt.exe -grpcsrv <port>` without non-graphical flags. If readiness times out, AEDT is left running for inspection; the MCP never force-closes it.
+For an MCP-launched session, prefer the port returned by `launch_aedt`. For a user-opened AEDT window, select its PID from `list_aedt_sessions`.
 
 ## Tools
 
 - `list_aedt_sessions`: discover AEDT PIDs and local listener ports without attaching.
-- `launch_aedt`: launch visible AEDT 2026 R1 in gRPC mode.
-- `check_aedt_connection`: run a real PyAEDT probe for one explicit target.
-- `release_connection`: perform an attach/release smoke test without closing AEDT.
-- `get_project_info`: inspect active project and design metadata.
+- `launch_aedt`: launch visible AEDT 2026 R1 with an explicit gRPC port.
+- `check_aedt_connection`: probe one explicit target.
+- `release_connection`: stop and release that target's broker.
+- `get_project_info`: inspect project and active design metadata.
 - `create_hfss_design`: create or activate a named HFSS design.
-- `save_project`: save the active project or save it to an explicit path.
+- `save_project`: save the active project, optionally to an explicit path.
 - `start_analysis`: start a named HFSS setup; non-blocking by default.
-- `get_analysis_status`: query running state and available setups.
+- `get_analysis_status`: query running state and setups.
 
-Resources:
+Resources `aedt://status` and `aedt://agent-instructions` never attach implicitly.
 
-- `aedt://status`: discovery-only status; it does not attach to AEDT.
-- `aedt://agent-instructions`: targeting and lifecycle rules.
+## Remove Legacy Toolbar
 
-## Failure isolation
-
-- Every Worker has a timeout.
-- A timed-out Worker is terminated; AEDT is not terminated.
-- Calls to the same target are serialized.
-- Calls to different explicit targets can run independently.
-- PyAEDT diagnostics are written under `AEDT_LOG_DIR` and never mixed with MCP stdio JSON.
-
-## Remove the legacy toolbar
-
-Older versions installed `Start AEDT MCP Bridge` and `Stop AEDT MCP Bridge` in AEDT. They are not used by this implementation. To remove only those known entries:
+The old `Start AEDT MCP Bridge` and `Stop AEDT MCP Bridge` buttons are not used. Remove only those known entries with:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\remove_legacy_aedt_mcp_toolbar.ps1" -AedtRoot "G:\ANSYS206\ANSYS Inc\v261\AnsysEM"
 ```
 
-The script preserves `TabConfig.xml.bak_aedt_mcp` and unrelated Toolkit entries. Restart AEDT after cleanup.
-
 ## Verification
-
-Offline tests:
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\scripts\run_live_acceptance.ps1 -Mode both
 ```
 
-Live acceptance testing must verify both PID attachment and gRPC launch mode, including normal AEDT window close without the "being used by another application, script or extension wizard" dialog.
+Live acceptance covers explicit PID and port targeting, repeated commands on one broker, disposable HFSS project save, and normal AEDT close while the broker is still connected. It fails if the "being used by another application, script or extension wizard" dialog appears.
