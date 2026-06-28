@@ -11,7 +11,7 @@ class BackendCommandError(ValueError):
     pass
 
 
-_DESKTOP_COMMANDS = {"ping", "project_info", "save_project"}
+_DESKTOP_COMMANDS = {"ping", "project_info", "save_project", "close_projects"}
 _HFSS_COMMANDS = {
     "create_hfss_design",
     "start_analysis",
@@ -214,6 +214,8 @@ class PyAedtBackend:
             return self._ping(desktop, target)
         if command == "project_info":
             return self._project_info(desktop, target)
+        if command == "close_projects":
+            return self._close_projects(desktop, target, arguments)
         return self._save_project(desktop, target, arguments)
 
     def _execute_hfss(
@@ -332,4 +334,43 @@ class PyAedtBackend:
             "project_name": project_name,
             "path": path or None,
             "saved": saved,
+        }
+
+    def _close_projects(
+        self,
+        desktop: Any,
+        target: AedtTarget,
+        arguments: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        project_names = arguments.get("project_names")
+        if not isinstance(project_names, list) or not project_names:
+            raise BackendCommandError("project_names must be a non-empty list")
+        if any(not isinstance(name, str) or not name.strip() for name in project_names):
+            raise BackendCommandError("project_names must contain only non-empty strings")
+        save = arguments.get("save", False)
+        if not isinstance(save, bool):
+            raise BackendCommandError("save must be a boolean")
+
+        available = [str(item) for item in _read_value(desktop, "project_list")]
+        closed = []
+        not_found = []
+        for raw_name in project_names:
+            name = raw_name.strip()
+            if name not in available:
+                not_found.append(name)
+                continue
+            if save:
+                desktop.save_project(name)
+            desktop.odesktop.CloseProject(name)
+            available.remove(name)
+            closed.append(name)
+        self._apps = {
+            key: app for key, app in self._apps.items() if key[0] not in closed
+        }
+        return {
+            "target": _target_dict(target),
+            "closed": closed,
+            "not_found": not_found,
+            "remaining": [str(item) for item in _read_value(desktop, "project_list")],
+            "saved_before_close": save,
         }

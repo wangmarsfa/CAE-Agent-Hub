@@ -58,6 +58,7 @@ py -3.10 -m venv .venv
 - `check_aedt_connection`：探测一个明确目标。
 - `release_connection`：停止并释放该目标的 broker。
 - `get_project_info`：读取工程和活动设计信息。
+- `close_projects`：只关闭明确指定的工程，可选择先保存；不会删除磁盘工程文件。
 - `create_hfss_design`：创建或激活指定 HFSS design。
 - `save_project`：保存当前工程，可指定另存路径。
 - `start_analysis`：启动指定 HFSS setup，默认非阻塞。

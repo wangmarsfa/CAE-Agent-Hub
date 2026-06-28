@@ -30,6 +30,7 @@ class FakeDesktop:
         self.fail_projects = fail_projects
         self.releases = []
         self.saved = []
+        self.closed = []
         self.quit_calls = 0
         self.odesktop = self
         self.aedt_version_id = "2026.1"
@@ -39,12 +40,13 @@ class FakeDesktop:
             kwargs.get("port") is not None if is_grpc_api is None else is_grpc_api
         )
         self.project = FakeProject()
+        self.projects = ["Demo"]
 
     @property
     def project_list(self):
         if self.fail_projects:
             raise RuntimeError("project lookup failed")
-        return ["Demo"]
+        return list(self.projects)
 
     def active_project(self, name=None):
         return self.project
@@ -63,6 +65,10 @@ class FakeDesktop:
     def save_project(self, project_name=None, project_path=None):
         self.saved.append((project_name, project_path))
         return True
+
+    def CloseProject(self, project_name):
+        self.closed.append(project_name)
+        self.projects.remove(project_name)
 
     def release_desktop(self, close_projects=False, close_on_exit=False):
         self.releases.append((close_projects, close_on_exit))
@@ -239,6 +245,23 @@ class PyAedtBackendTests(unittest.TestCase):
 
         self.assertTrue(result["saved"])
         self.assertEqual(self.desktops[0].saved, [("Demo", "C:/temp/demo.aedt")])
+
+    def test_close_projects_only_closes_explicit_existing_names(self):
+        desktop = FakeDesktop(aedt_process_id=15488)
+        desktop.projects = ["Keep", "Old1", "Old2"]
+        backend = PyAedtBackend(desktop_factory=lambda **kwargs: desktop)
+
+        result = backend.execute(
+            AedtTarget("pid", 15488),
+            "close_projects",
+            {"project_names": ["Old1", "Missing", "Old2"], "save": False},
+        )
+
+        self.assertEqual(desktop.closed, ["Old1", "Old2"])
+        self.assertEqual(result["closed"], ["Old1", "Old2"])
+        self.assertEqual(result["not_found"], ["Missing"])
+        self.assertEqual(result["remaining"], ["Keep"])
+        self.assertFalse(result["saved_before_close"])
 
     def test_start_analysis_is_non_blocking(self):
         result = self.backend.execute(

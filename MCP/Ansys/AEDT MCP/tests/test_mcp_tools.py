@@ -104,6 +104,18 @@ class McpToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.worker.calls[0][1], "project_info")
         self.assertEqual(self.worker.calls[1][1], "save_project")
 
+    async def test_close_projects_forwards_exact_names_without_saving(self):
+        result = await mcp_server.close_projects(
+            pid=15488,
+            project_names=["Old1", "Old2"],
+            save=False,
+        )
+
+        self.assertEqual(result["target"], {"kind": "pid", "value": 15488})
+        self.assertEqual(self.worker.calls[0][1], "close_projects")
+        self.assertEqual(self.worker.calls[0][2]["project_names"], ["Old1", "Old2"])
+        self.assertFalse(self.worker.calls[0][2]["save"])
+
     async def test_hfss_tools_forward_structured_arguments(self):
         created = await mcp_server.create_hfss_design(
             port=50051,

@@ -58,6 +58,7 @@ For an MCP-launched session, prefer the port returned by `launch_aedt`. For a us
 - `check_aedt_connection`: probe one explicit target.
 - `release_connection`: stop and release that target's broker.
 - `get_project_info`: inspect project and active design metadata.
+- `close_projects`: close only explicitly named projects, optionally saving first; it never deletes project files.
 - `create_hfss_design`: create or activate a named HFSS design.
 - `save_project`: save the active project, optionally to an explicit path.
 - `start_analysis`: start a named HFSS setup; non-blocking by default.

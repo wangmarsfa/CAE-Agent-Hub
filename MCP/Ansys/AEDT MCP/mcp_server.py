@@ -109,6 +109,24 @@ async def get_project_info(
 
 
 @mcp.tool()
+async def close_projects(
+    project_names: list[str],
+    save: bool = False,
+    pid: int | None = None,
+    port: int | None = None,
+    timeout: float | None = None,
+) -> dict[str, Any]:
+    """Close only the named projects in one explicit AEDT target."""
+    return await _worker_call(
+        "close_projects",
+        pid=pid,
+        port=port,
+        arguments={"project_names": project_names, "save": save},
+        timeout=timeout,
+    )
+
+
+@mcp.tool()
 async def create_hfss_design(
     project_name: str,
     design_name: str,
