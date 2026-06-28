@@ -23,6 +23,7 @@ py-modules = [
     "pyaedt_backend",
     "pyaedt_worker",
     "worker_client",
+    "wr90_case",
     "session_discovery",
     "aedt_launcher",
     "mcp_server",

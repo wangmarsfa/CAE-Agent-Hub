@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
@@ -37,7 +37,11 @@ async def run(args: argparse.Namespace) -> int:
     )
 
     async with stdio_client(params) as streams:
-        async with ClientSession(*streams) as session:
+        session_timeout = max(args.timeout, 1800.0 if args.run_wr90 else args.timeout)
+        async with ClientSession(
+            *streams,
+            read_timeout_seconds=timedelta(seconds=session_timeout),
+        ) as session:
             await session.initialize()
             tools = await session.list_tools()
             launched = None
@@ -67,6 +71,7 @@ async def run(args: argparse.Namespace) -> int:
             port = int(raw_port) if raw_port else None
             status = {
                 "connected": bool(checked.get("connected")),
+                "phase": "solving_wr90" if args.run_wr90 else "connected",
                 "holder_pid": os.getpid(),
                 "aedt_pid": pid,
                 "grpc_port": port,
@@ -81,7 +86,32 @@ async def run(args: argparse.Namespace) -> int:
                 json.dumps(status, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
+            if args.run_wr90:
+                wr90_output = args.wr90_output or args.status.parent / "WR90_Waveguide"
+                status["wr90"] = _tool_result(
+                    await session.call_tool(
+                        "build_wr90_waveguide",
+                        {
+                            **target,
+                            "project_name": args.wr90_project,
+                            "design_name": args.wr90_design,
+                            "output_dir": str(wr90_output),
+                            "solve": True,
+                            "timeout": 1800.0,
+                        },
+                    ),
+                    "build_wr90_waveguide",
+                )
+                status["phase"] = "complete"
+                status["completed_at"] = datetime.now(timezone.utc).isoformat()
+                args.status.write_text(
+                    json.dumps(status, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
             print(json.dumps(status, ensure_ascii=False), flush=True)
+
+            if args.exit_after_run:
+                return 0
 
             while psutil.pid_exists(pid):
                 await asyncio.sleep(0.5)
@@ -96,6 +126,11 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--status", type=Path, required=True)
     parser.add_argument("--attach", action="store_true")
+    parser.add_argument("--run-wr90", action="store_true")
+    parser.add_argument("--wr90-project", default="Classic_WR90_Waveguide")
+    parser.add_argument("--wr90-design", default="WR90_TE10")
+    parser.add_argument("--wr90-output", type=Path)
+    parser.add_argument("--exit-after-run", action="store_true")
     args = parser.parse_args()
     if bool(args.pid) == bool(args.port):
         parser.error("specify exactly one of --pid or --port")

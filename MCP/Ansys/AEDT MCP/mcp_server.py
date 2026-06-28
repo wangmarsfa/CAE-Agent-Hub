@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -192,6 +193,35 @@ async def get_analysis_status(
             "setup_name": setup_name,
         },
         timeout=timeout,
+    )
+
+
+@mcp.tool()
+async def build_wr90_waveguide(
+    pid: int | None = None,
+    port: int | None = None,
+    project_name: str = "Classic_WR90_Waveguide",
+    design_name: str = "WR90_TE10",
+    output_dir: str = "",
+    solve: bool = True,
+    timeout: float | None = None,
+) -> dict[str, Any]:
+    """Build, validate, solve, and export a classic WR-90 TE10 HFSS case."""
+    destination = output_dir.strip() or str(
+        Path(__file__).resolve().parent / "test-artifacts" / "WR90_Waveguide"
+    )
+    return await _worker_call(
+        "build_wr90_waveguide",
+        pid=pid,
+        port=port,
+        arguments={
+            "project_name": project_name,
+            "design_name": design_name,
+            "solution_type": "DrivenModal",
+            "output_dir": destination,
+            "solve": solve,
+        },
+        timeout=timeout if timeout is not None else 1800.0,
     )
 
 

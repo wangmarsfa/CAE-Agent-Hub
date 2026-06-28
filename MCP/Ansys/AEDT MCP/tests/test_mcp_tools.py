@@ -132,6 +132,22 @@ class McpToolTests(unittest.IsolatedAsyncioTestCase):
             ["create_hfss_design", "start_analysis", "analysis_status"],
         )
 
+    async def test_wr90_tool_forwards_explicit_target_and_solve_options(self):
+        result = await mcp_server.build_wr90_waveguide(
+            port=50051,
+            project_name="WR90_Modal",
+            design_name="TE10_Through",
+            output_dir="C:/temp/wr90",
+            solve=True,
+        )
+
+        self.assertEqual(result["target"], {"kind": "port", "value": 50051})
+        self.assertEqual(self.worker.calls[0][1], "build_wr90_waveguide")
+        self.assertEqual(self.worker.calls[0][2]["project_name"], "WR90_Modal")
+        self.assertEqual(self.worker.calls[0][2]["design_name"], "TE10_Through")
+        self.assertEqual(self.worker.calls[0][2]["output_dir"], "C:/temp/wr90")
+        self.assertTrue(self.worker.calls[0][2]["solve"])
+
     def test_status_resource_never_attaches(self):
         result = json.loads(mcp_server.aedt_status())
 

@@ -62,6 +62,7 @@ py -3.10 -m venv .venv
 - `save_project`：保存当前工程，可指定另存路径。
 - `start_analysis`：启动指定 HFSS setup，默认非阻塞。
 - `get_analysis_status`：查询求解状态和 setup。
+- `build_wr90_waveguide`：建立、校验、求解并导出按模态阻抗归一化的 WR-90 TE10 直波导算例。模型包含 22.86 mm x 10.16 mm x 50 mm 真空通道、PEC 壁、两个波端口、10 GHz 自适应 setup，以及 8-12 GHz 共 81 点的插值扫频。
 
 资源 `aedt://status` 与 `aedt://agent-instructions` 不会隐式连接 AEDT。
 

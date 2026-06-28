@@ -12,7 +12,12 @@ class BackendCommandError(ValueError):
 
 
 _DESKTOP_COMMANDS = {"ping", "project_info", "save_project"}
-_HFSS_COMMANDS = {"create_hfss_design", "start_analysis", "analysis_status"}
+_HFSS_COMMANDS = {
+    "create_hfss_design",
+    "start_analysis",
+    "analysis_status",
+    "build_wr90_waveguide",
+}
 _SOLUTION_TYPES = {
     "DrivenModal": "Modal",
     "DrivenTerminal": "Terminal",
@@ -34,6 +39,12 @@ def _default_hfss_factory(**kwargs: Any) -> Any:
     from ansys.aedt.core import Hfss
 
     return Hfss(**kwargs)
+
+
+def _default_wr90_builder(app: Any, output_dir: str, solve: bool) -> dict[str, Any]:
+    from wr90_case import build_wr90_case
+
+    return build_wr90_case(app, output_dir, solve)
 
 
 def _target_dict(target: AedtTarget) -> dict[str, Any]:
@@ -93,10 +104,12 @@ class PyAedtBackend:
         *,
         desktop_factory: Callable[..., Any] | None = None,
         hfss_factory: Callable[..., Any] | None = None,
+        wr90_builder: Callable[[Any, str, bool], dict[str, Any]] | None = None,
         version: str = "2026.1",
     ) -> None:
         self._desktop_factory = desktop_factory or _default_desktop_factory
         self._hfss_factory = hfss_factory or _default_hfss_factory
+        self._wr90_builder = wr90_builder or _default_wr90_builder
         self._version = version
         self._desktop: Any = None
         self._bound_target: AedtTarget | None = None
@@ -209,13 +222,21 @@ class PyAedtBackend:
         command: str,
         arguments: Mapping[str, Any],
     ) -> dict[str, Any]:
-        project_name = _required_text(arguments, "project_name")
-        design_name = _required_text(arguments, "design_name")
+        if command == "build_wr90_waveguide":
+            project_name = _optional_text(arguments, "project_name", "Classic_WR90_Waveguide")
+            design_name = _optional_text(arguments, "design_name", "WR90_TE10")
+            output_dir = _required_text(arguments, "output_dir")
+            solve = arguments.get("solve", True)
+            if not isinstance(solve, bool):
+                raise BackendCommandError("solve must be a boolean")
+        else:
+            project_name = _required_text(arguments, "project_name")
+            design_name = _required_text(arguments, "design_name")
         self._desktop_for(target)
         kwargs = self._connection_kwargs(self._bound_target or target)
         kwargs.update({"project": project_name, "design": design_name})
 
-        if command == "create_hfss_design":
+        if command in {"create_hfss_design", "build_wr90_waveguide"}:
             requested = _optional_text(arguments, "solution_type", "DrivenModal")
             try:
                 kwargs["solution_type"] = _SOLUTION_TYPES[requested]
@@ -229,6 +250,9 @@ class PyAedtBackend:
         if app is None:
             app = self._hfss_factory(**kwargs)
             self._apps[app_key] = app
+        if command == "build_wr90_waveguide":
+            result = self._wr90_builder(app, output_dir, solve)
+            return {"target": _target_dict(target), **result}
         if command == "create_hfss_design":
             return {
                 "target": _target_dict(target),

@@ -95,6 +95,7 @@ class PyAedtBackendTests(unittest.TestCase):
     def setUp(self):
         self.desktops = []
         self.apps = []
+        self.wr90_calls = []
 
         def desktop_factory(**kwargs):
             desktop = FakeDesktop(**kwargs)
@@ -107,9 +108,20 @@ class PyAedtBackendTests(unittest.TestCase):
             self.apps.append(app)
             return app
 
+        def wr90_builder(app, output_dir, solve):
+            self.wr90_calls.append((app, output_dir, solve))
+            return {
+                "success": True,
+                "project": app.project_name,
+                "design": app.design_name,
+                "output_dir": str(output_dir),
+                "solved": solve,
+            }
+
         self.backend = PyAedtBackend(
             desktop_factory=desktop_factory,
             hfss_factory=hfss_factory,
+            wr90_builder=wr90_builder,
         )
 
     def test_pid_connection_arguments_and_explicit_release(self):
@@ -264,6 +276,23 @@ class PyAedtBackendTests(unittest.TestCase):
         self.backend.execute(target, "analysis_status", arguments)
 
         self.assertEqual(len(self.apps), 1)
+
+    def test_wr90_command_runs_builder_in_bound_hfss_session(self):
+        result = self.backend.execute(
+            AedtTarget("port", 50051),
+            "build_wr90_waveguide",
+            {
+                "project_name": "Classic_WR90_Waveguide",
+                "design_name": "WR90_TE10",
+                "output_dir": "C:/temp/wr90",
+                "solve": True,
+            },
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(self.apps[0].kwargs["solution_type"], "Modal")
+        self.assertEqual(self.wr90_calls[0][1], "C:/temp/wr90")
+        self.assertTrue(self.wr90_calls[0][2])
 
 
 if __name__ == "__main__":

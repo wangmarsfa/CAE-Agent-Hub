@@ -62,6 +62,7 @@ For an MCP-launched session, prefer the port returned by `launch_aedt`. For a us
 - `save_project`: save the active project, optionally to an explicit path.
 - `start_analysis`: start a named HFSS setup; non-blocking by default.
 - `get_analysis_status`: query running state and setups.
+- `build_wr90_waveguide`: build, validate, solve, and export a modal-impedance WR-90 TE10 straight-waveguide case. It uses a 22.86 mm x 10.16 mm x 50 mm vacuum channel, PEC walls, two wave ports, a 10 GHz adaptive setup, and an 81-point interpolating sweep from 8 to 12 GHz.
 
 Resources `aedt://status` and `aedt://agent-instructions` never attach implicitly.
 
